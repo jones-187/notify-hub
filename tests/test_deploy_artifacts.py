@@ -33,6 +33,8 @@ def test_compose_maps_both_ports():
     ports = [str(port) for port in _service()["ports"]]
     assert any("8080" in port for port in ports), "缺公网 MCP 端口 8080 的映射"
     assert any("8081" in port for port in ports), "缺内网端口 8081 的映射"
+    # 宿主机端口要能用 .env 覆盖：换机器遇到端口冲突时才不用改这个文件。
+    assert all("${" in port for port in ports), "宿主机端口应可用环境变量覆盖"
 
 
 def test_compose_persists_db_in_mounted_volume():
