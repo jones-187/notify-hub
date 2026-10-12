@@ -8,8 +8,8 @@ from starlette.middleware import Middleware
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
-from notify_hub.forwarder import deliver
-from notify_hub.store import STATUS_FAILED, STATUS_SENT
+from notify_hub.messaging import send_now
+from notify_hub.store import message_to_dict
 
 
 class BearerAuthMiddleware:
@@ -45,28 +45,22 @@ def create_app(*, store, forwarder, token, wait=anyio.sleep):
     async def healthz(request):
         return PlainTextResponse("ok")
 
+    async def messages(request):
+        return JSONResponse(
+            {"messages": [message_to_dict(m) for m in store.list_messages()]}
+        )
+
     async def notify(request):
         data = await request.json()
-        channels = store.list_enabled_channels()
-        deliveries = await deliver(
-            forwarder, channels, data["title"], data["body"], wait=wait
-        )
-        status = STATUS_SENT if all(d.success for d in deliveries) else STATUS_FAILED
-        attempts = max((d.attempts for d in deliveries), default=0)
-        last_error = next((d.error for d in reversed(deliveries) if not d.success), None)
-        message_id = store.add_message(
-            data["title"],
-            data["body"],
-            status,
-            deliveries,
-            attempts=attempts,
-            last_error=last_error,
+        message_id = await send_now(
+            store, forwarder, data["title"], data["body"], wait=wait
         )
         return JSONResponse({"id": message_id})
 
     routes = [
         Route("/healthz", healthz, methods=["GET"]),
         Route("/notify", notify, methods=["POST"]),
+        Route("/messages", messages, methods=["GET"]),
     ]
     return Starlette(
         routes=routes,
