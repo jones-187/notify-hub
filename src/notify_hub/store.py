@@ -1,6 +1,8 @@
 """排期层的数据存储：单个 SQLite 文件。"""
 
 import json
+import math
+import os
 import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -13,6 +15,10 @@ STATUS_PENDING = "未发"
 STATUS_SENT = "已发"
 STATUS_FAILED = "失败"
 STATUS_CANCELLED = "已取消"
+
+# 保留上限：数据库文件超过 MAX_BYTES 时清理，降到 TARGET_BYTES 以下。
+DEFAULT_MAX_BYTES = 10 * 1024 * 1024
+DEFAULT_TARGET_BYTES = 8 * 1024 * 1024
 
 
 def utc_now():
@@ -96,6 +102,7 @@ class Message:
 
 class Store:
     def __init__(self, path):
+        self._path = path
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._create_schema()
@@ -253,6 +260,64 @@ class Store:
             ),
         )
         self._conn.commit()
+
+    def cleanup(self, *, max_bytes=DEFAULT_MAX_BYTES, target_bytes=DEFAULT_TARGET_BYTES):
+        """超过 max_bytes 时删最旧的已发和已取消消息，回收空间到 target_bytes 以下。
+
+        只删已发和已取消的消息，未发的消息永远不是候选。
+        删除后文件不会自己变小，所以最后 VACUUM 一次真正回收空间。
+        返回被删掉的消息条数。
+        """
+        if self._file_size() <= max_bytes:
+            return 0
+
+        deleted = 0
+        while True:
+            live_bytes = self._live_size()
+            if live_bytes <= target_bytes:
+                break
+            removed = self._delete_oldest_reclaimable(live_bytes, target_bytes)
+            if removed == 0:
+                break
+            deleted += removed
+
+        self._conn.execute("VACUUM")
+        return deleted
+
+    def _file_size(self):
+        return os.path.getsize(self._path)
+
+    def _live_size(self):
+        """VACUUM 后文件大约会收缩到的字节数：在用页数乘页大小。"""
+        page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
+        free_pages = self._conn.execute("PRAGMA freelist_count").fetchone()[0]
+        page_size = self._conn.execute("PRAGMA page_size").fetchone()[0]
+        return (page_count - free_pages) * page_size
+
+    def _delete_oldest_reclaimable(self, live_bytes, target_bytes):
+        """删最旧的一批已发/已取消消息；只删到接近目标所需的数量，避免多删历史。"""
+        reclaimable = self._conn.execute(
+            "SELECT COUNT(*) FROM messages WHERE status IN (?, ?)",
+            (STATUS_SENT, STATUS_CANCELLED),
+        ).fetchone()[0]
+        if reclaimable == 0:
+            return 0
+        total = self._conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        average_row = live_bytes / total if total else 1
+        needed = max(1, math.ceil((live_bytes - target_bytes) / average_row))
+        batch = min(reclaimable, needed)
+        rows = self._conn.execute(
+            "SELECT id FROM messages WHERE status IN (?, ?)"
+            " ORDER BY created_at, id LIMIT ?",
+            (STATUS_SENT, STATUS_CANCELLED, batch),
+        ).fetchall()
+        ids = [row["id"] for row in rows]
+        placeholders = ",".join("?" for _ in ids)
+        self._conn.execute(
+            f"DELETE FROM messages WHERE id IN ({placeholders})", ids
+        )
+        self._conn.commit()
+        return len(ids)
 
     def get_message(self, message_id):
         row = self._conn.execute(

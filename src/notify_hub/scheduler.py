@@ -3,7 +3,16 @@
 import anyio
 
 from notify_hub.forwarder import deliver
-from notify_hub.store import STATUS_FAILED, STATUS_SENT, utc_now
+from notify_hub.store import (
+    DEFAULT_MAX_BYTES,
+    DEFAULT_TARGET_BYTES,
+    STATUS_FAILED,
+    STATUS_SENT,
+    utc_now,
+)
+
+# 清理的默认间隔（秒）：后台循环按此时长定期回收数据库空间。
+DEFAULT_CLEANUP_INTERVAL = 60.0
 
 
 async def tick(store, forwarder, *, now=utc_now, wait=anyio.sleep, limit=50):
@@ -37,11 +46,20 @@ async def run_loop(
     sleep=anyio.sleep,
     wait=anyio.sleep,
     limit=50,
+    cleanup_interval=DEFAULT_CLEANUP_INTERVAL,
+    max_bytes=DEFAULT_MAX_BYTES,
+    target_bytes=DEFAULT_TARGET_BYTES,
 ):
-    """每秒检查一次到期的消息，直到被取消。
+    """每秒检查一次到期的消息，并按 cleanup_interval 定期清理旧消息。
 
     启动：在异步上下文里调用本函数；停止：取消该任务。
+    清理不是只在启动时跑一次，而是每隔 cleanup_interval 秒跑一次。
     """
+    last_cleanup = now()
     while True:
         await tick(store, forwarder, now=now, wait=wait, limit=limit)
+        current = now()
+        if (current - last_cleanup).total_seconds() >= cleanup_interval:
+            store.cleanup(max_bytes=max_bytes, target_bytes=target_bytes)
+            last_cleanup = current
         await sleep(interval)
