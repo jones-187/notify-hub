@@ -2,6 +2,7 @@
 
 import secrets
 
+import anyio
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import JSONResponse, PlainTextResponse
@@ -32,12 +33,13 @@ class BearerAuthMiddleware:
         return await self.app(scope, receive, send)
 
 
-def create_app(*, store, forwarder, token):
+def create_app(*, store, forwarder, token, wait=anyio.sleep):
     """构建内网端口的应用。
 
     store：排期层的数据存储。
     forwarder：转发层出口。
     token：bearer 令牌。
+    wait：重试等待函数，测试注入假的以避免真等。
     """
 
     async def healthz(request):
@@ -46,10 +48,19 @@ def create_app(*, store, forwarder, token):
     async def notify(request):
         data = await request.json()
         channels = store.list_enabled_channels()
-        deliveries = await deliver(forwarder, channels, data["title"], data["body"])
+        deliveries = await deliver(
+            forwarder, channels, data["title"], data["body"], wait=wait
+        )
         status = STATUS_SENT if all(d.success for d in deliveries) else STATUS_FAILED
+        attempts = max((d.attempts for d in deliveries), default=0)
+        last_error = next((d.error for d in reversed(deliveries) if not d.success), None)
         message_id = store.add_message(
-            data["title"], data["body"], status, deliveries
+            data["title"],
+            data["body"],
+            status,
+            deliveries,
+            attempts=attempts,
+            last_error=last_error,
         )
         return JSONResponse({"id": message_id})
 

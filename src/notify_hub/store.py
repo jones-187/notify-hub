@@ -23,6 +23,8 @@ class Message:
     body: str
     status: str
     channel_results: list
+    attempts: int = 0
+    last_error: str | None = None
 
 
 class Store:
@@ -44,7 +46,9 @@ class Store:
                 title TEXT NOT NULL,
                 body TEXT NOT NULL,
                 status TEXT NOT NULL,
-                channel_results TEXT NOT NULL DEFAULT '[]'
+                channel_results TEXT NOT NULL DEFAULT '[]',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT
             );
             """
         )
@@ -64,10 +68,21 @@ class Store:
         ).fetchall()
         return [Channel(id=row["id"], apprise_url=row["apprise_url"]) for row in rows]
 
-    def add_message(self, title, body, status, channel_results):
+    def add_message(
+        self, title, body, status, channel_results, attempts=0, last_error=None
+    ):
         cur = self._conn.execute(
-            "INSERT INTO messages (title, body, status, channel_results) VALUES (?, ?, ?, ?)",
-            (title, body, status, json.dumps([asdict(r) for r in channel_results])),
+            "INSERT INTO messages"
+            " (title, body, status, channel_results, attempts, last_error)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                title,
+                body,
+                status,
+                json.dumps([asdict(r) for r in channel_results]),
+                attempts,
+                last_error,
+            ),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -84,4 +99,6 @@ class Store:
             body=row["body"],
             status=row["status"],
             channel_results=json.loads(row["channel_results"]),
+            attempts=row["attempts"],
+            last_error=row["last_error"],
         )

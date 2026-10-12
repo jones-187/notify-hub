@@ -61,8 +61,8 @@ async def test_notify_sends_to_all_enabled_channels_and_records_results(
     stored = store.get_message(message_id)
     assert stored.status == "已发"
     assert stored.channel_results == [
-        {"channel_id": 1, "success": True, "error": None},
-        {"channel_id": 3, "success": True, "error": None},
+        {"channel_id": 1, "success": True, "error": None, "attempts": 1},
+        {"channel_id": 3, "success": True, "error": None, "attempts": 1},
     ]
 
 
@@ -78,13 +78,15 @@ async def test_notify_records_failed_channel_and_still_delivers_others(
     )
     message_id = resp.json()["id"]
 
-    assert [call["apprise_url"] for call in forwarder.calls] == [
-        "fake://ok",
-        "fake://broken",
-    ]
+    assert forwarder.call_counts() == {"fake://ok": 1, "fake://broken": 4}
     stored = store.get_message(message_id)
     assert stored.status == "失败"
     assert stored.channel_results == [
-        {"channel_id": 1, "success": True, "error": None},
-        {"channel_id": 2, "success": False, "error": "发送失败：fake://broken"},
+        {"channel_id": 1, "success": True, "error": None, "attempts": 1},
+        {
+            "channel_id": 2,
+            "success": False,
+            "error": "发送失败：fake://broken",
+            "attempts": 4,
+        },
     ]
