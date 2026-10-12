@@ -59,7 +59,12 @@ async def test_public_port_serves_mcp(public_http):
 
     tools = await mcp.list_tools()
 
-    assert [tool["name"] for tool in tools] == ["send_message", "schedule_message"]
+    assert [tool["name"] for tool in tools] == [
+        "send_message",
+        "schedule_message",
+        "list_messages",
+        "cancel_message",
+    ]
 
 
 async def test_public_port_does_not_serve_internal_routes(public_http):

@@ -62,6 +62,21 @@ def parse_scheduled_at(text):
     return dt
 
 
+def message_summary(message):
+    """列表里一条消息的对外形状：编号、发送时间、标题、状态。
+
+    发送时间按 Asia/Shanghai 呈现，库里存的仍是 UTC。
+    """
+    return {
+        "id": message.id,
+        "scheduled_at": format_shanghai(
+            datetime.fromisoformat(message.scheduled_at)
+        ),
+        "title": message.title,
+        "status": message.status,
+    }
+
+
 def message_to_dict(message):
     """消息对外的形状：时间按 Asia/Shanghai 呈现，库里存的仍是 UTC。"""
     return {
@@ -232,6 +247,27 @@ class Store:
             (STATUS_SENT, STATUS_FAILED, sent_limit),
         ).fetchall()
         return [self._row_to_message(row) for row in list(pending) + list(sent)]
+
+    def cancel_message(self, message_id):
+        """把一条未发的消息置为“已取消”，不删行。
+
+        返回 (message, cancelled)：message 为 None 表示编号不存在；
+        cancelled 为 False 表示这条消息不在“未发”状态，没有被取消。
+        """
+        row = self._conn.execute(
+            "SELECT * FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        if row is None:
+            return None, False
+        cur = self._conn.execute(
+            "UPDATE messages SET status = ? WHERE id = ? AND status = ?",
+            (STATUS_CANCELLED, message_id, STATUS_PENDING),
+        )
+        self._conn.commit()
+        updated = self._conn.execute(
+            "SELECT * FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        return self._row_to_message(updated), cur.rowcount == 1
 
     def fetch_due_messages(self, now, limit=50):
         """取出到点仍未发的消息，最多 limit 条。"""
