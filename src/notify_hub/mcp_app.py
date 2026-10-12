@@ -22,8 +22,11 @@ from notify_hub.store import (
     utc_now,
 )
 
-TITLE = Annotated[str, Field(description="消息标题，纯文本。")]
-BODY = Annotated[str, Field(description="消息正文，纯文本。")]
+# 工具与字段说明一律**中英双语、英文在前**。理由：客户端的工具检索索引不切分中文，只写中文时
+# 这个服务在 agent 侧完全搜不到（实测 pi 的 searchTools：中文查询 0 命中，说明正文里的英文词能命中）。
+# 见 docs/adr/0006-bilingual-tool-descriptions.md。
+TITLE = Annotated[str, Field(description="Notification title, plain text. 消息标题，纯文本。")]
+BODY = Annotated[str, Field(description="Notification body, plain text. 消息正文，纯文本。")]
 SCHEDULED_AT = Annotated[
     str,
     Field(
@@ -100,7 +103,9 @@ def create_public_app(
 
     @mcp.tool()
     async def send_message(title: TITLE, body: BODY) -> dict:
-        """立刻发送一条消息，不排期。发给所有启用中的通道。
+        """Send a notification or reminder now.
+
+        立刻发送一条消息，不排期。发给所有启用中的通道。
 
         返回 {"id": 消息编号}。
         """
@@ -111,7 +116,9 @@ def create_public_app(
     async def schedule_message(
         title: TITLE, body: BODY, scheduled_at: SCHEDULED_AT
     ) -> dict:
-        """排期一条消息，到 scheduled_at 指定的绝对时间才发送，发给所有启用中的通道。
+        """Schedule a notification or reminder to be sent at a later time.
+
+        排期一条消息，到 scheduled_at 指定的绝对时间才发送，发给所有启用中的通道。
 
         排期跨度没有上限，服务重启后仍然有效。
         返回 {"id": 消息编号, "scheduled_at": 按 Asia/Shanghai 回显的发送时间}。
@@ -130,7 +137,9 @@ def create_public_app(
 
     @mcp.tool()
     async def list_messages() -> dict:
-        """列出还没发的消息和最近已发的消息，最多各 50 条。
+        """List notifications that are still pending or were recently sent.
+
+        列出还没发的消息和最近已发的消息，最多各 50 条。
 
         每条含编号 id、发送时间（按 Asia/Shanghai 呈现）、标题、状态。
         失败的消息还带 last_error，写明失败原因（例如某个通道发送失败）。
@@ -143,7 +152,9 @@ def create_public_app(
 
     @mcp.tool()
     async def cancel_message(message_id: MESSAGE_ID) -> dict:
-        """取消一条还没发出去的消息（状态变成“已取消”），返回是否成功。
+        """Cancel a notification that has not been sent yet.
+
+        取消一条还没发出去的消息（状态变成“已取消”），返回是否成功。
 
         message_id 来自 send_message / schedule_message 的返回或 list_messages 的 id。
         只有“未发”的消息能取消；编号不存在，或消息已经发出、已经取消、发送失败时

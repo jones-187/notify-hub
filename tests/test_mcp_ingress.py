@@ -3,6 +3,8 @@
 接缝是公网端口的 MCP 边界；转发层出口、时钟与等待都由测试注入。
 """
 
+import re
+
 import pytest
 from mcp_client import INITIALIZE_PARAMS
 
@@ -63,6 +65,31 @@ async def test_mcp_advertises_all_tools_with_parameters_explained(mcp):
     assert "2026-10-13T08:00:00+08:00" in scheduled_at["description"]
     assert "Asia/Shanghai" in scheduled_at["description"]
     assert "过去" in scheduled_at["description"]
+
+
+CJK = re.compile(r"[\u3000-\u9fff]")
+
+
+async def test_mcp_tool_descriptions_lead_with_english(mcp):
+    """说明必须中英双语、英文在前。
+
+    客户端的工具检索索引不切分中文，只写中文时这个服务在 agent 侧搜不到；
+    英文那句是可被检索的键，不是重复。见 docs/adr/0006-bilingual-tool-descriptions.md。
+    """
+    tools = {tool["name"]: tool for tool in await mcp.list_tools()}
+
+    for name, tool in tools.items():
+        first_line = tool["description"].splitlines()[0]
+        assert not CJK.search(first_line), f"{name} 的说明第一行不是英文：{first_line!r}"
+        assert "notification" in tool["description"].lower(), (
+            f"{name} 的说明里没有可检索的英文词"
+        )
+
+    for field in ("title", "body"):
+        described = tools["send_message"]["inputSchema"]["properties"][field][
+            "description"
+        ]
+        assert not CJK.match(described), f"send_message.{field} 的说明没有英文在前"
 
 
 async def test_send_message_sends_immediately_and_returns_message_id(
