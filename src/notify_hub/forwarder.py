@@ -65,7 +65,7 @@ DEFAULT_RETRY_DELAYS = (1.0, 2.0, 4.0)
 
 
 async def deliver(
-    forwarder,
+    forwarder: Forwarder,
     channels,
     title,
     body,
@@ -95,7 +95,9 @@ async def deliver(
     return deliveries
 
 
-async def _deliver_with_retry(forwarder, channel, title, body, retry_delays, wait):
+async def _deliver_with_retry(
+    forwarder: Forwarder, channel, title, body, retry_delays, wait
+):
     attempt = 0
     while True:
         result = await anyio.to_thread.run_sync(

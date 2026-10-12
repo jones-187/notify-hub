@@ -47,9 +47,10 @@ MESSAGE_ID = Annotated[
     ),
 ]
 
-# 静态共享令牌没有 OAuth 授权服务器，这两个地址只用于回 OAuth 元数据，是占位值。
+# 静态共享令牌没有 OAuth 授权服务器；issuer_url 是 SDK 必填，这里给占位值。
+# resource_server_url 固定为 None：一旦给它非空值，SDK 就会自动注册一个免令牌的
+# OAuth 发现端点 /.well-known/oauth-protected-resource/mcp，多出规格没要求的公网暴露面。
 ISSUER_URL = "https://notify-hub.invalid"
-RESOURCE_URL = "http://127.0.0.1:8080/mcp"
 SCOPE = "notify"
 
 
@@ -87,7 +88,7 @@ def create_public_app(*, store, forwarder, token, now=utc_now, wait=anyio.sleep)
         token_verifier=StaticTokenVerifier(token),
         auth=AuthSettings(
             issuer_url=ISSUER_URL,
-            resource_server_url=RESOURCE_URL,
+            resource_server_url=None,
             required_scopes=[SCOPE],
             validate_token_resource=False,
         ),
@@ -128,6 +129,7 @@ def create_public_app(*, store, forwarder, token, now=utc_now, wait=anyio.sleep)
         """列出还没发的消息和最近已发的消息，最多各 50 条。
 
         每条含编号 id、发送时间（按 Asia/Shanghai 呈现）、标题、状态。
+        失败的消息还带 last_error，写明失败原因（例如某个通道发送失败）。
         未发的消息在前（发送时间由早到晚），最近已发的在后（由新到旧）。
         用返回的 id 可以调 cancel_message 取消一条未发的消息。
         """

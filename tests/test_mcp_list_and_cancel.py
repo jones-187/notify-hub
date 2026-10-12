@@ -41,6 +41,34 @@ async def test_list_messages_shows_pending_then_recently_sent_with_fields(mcp, s
     assert messages[1]["scheduled_at"].endswith("+08:00")
 
 
+async def test_list_messages_shows_failure_reason_for_failed_message(
+    mcp, store, forwarder
+):
+    store.add_channel("fake://broken")
+    forwarder.fail_urls = {"fake://broken"}
+    failed = await mcp.call_tool("send_message", {"title": "失败", "body": "正文"})
+    failed_id = mcp.json(failed)["id"]
+
+    result = await mcp.call_tool("list_messages", {})
+
+    message = next(m for m in mcp.json(result)["messages"] if m["id"] == failed_id)
+    assert message["status"] == "失败"
+    assert message["last_error"] == "发送失败：fake://broken"
+
+
+async def test_list_messages_omits_last_error_for_successful_message(mcp, store):
+    # 成功的消息不带失败原因，返回形状不被撑大。
+    store.add_channel("fake://one")
+    sent = await mcp.call_tool("send_message", {"title": "立刻", "body": "正文"})
+    sent_id = mcp.json(sent)["id"]
+
+    result = await mcp.call_tool("list_messages", {})
+
+    message = next(m for m in mcp.json(result)["messages"] if m["id"] == sent_id)
+    assert message["status"] == "已发"
+    assert "last_error" not in message
+
+
 async def test_list_messages_caps_how_many_it_returns(mcp, store):
     store.add_channel("fake://one")
     for index in range(60):

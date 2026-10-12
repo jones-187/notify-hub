@@ -83,6 +83,21 @@ async def test_send_message_sends_immediately_and_returns_message_id(
     assert stored.status == "已发"
 
 
+async def test_send_message_without_enabled_channels_fails_and_records_reason(
+    mcp, store, forwarder
+):
+    # 一条通道都没启用：其实一条也没发出去，绝不能标成“已发”。
+    result = await mcp.call_tool("send_message", {"title": "标题", "body": "正文"})
+
+    assert result["isError"] is False
+    message_id = mcp.json(result)["id"]
+    assert forwarder.calls == []
+    stored = store.get_message(message_id)
+    assert stored.status == "失败"
+    assert stored.attempts == 0
+    assert stored.last_error == "没有启用中的通道"
+
+
 async def test_schedule_message_queues_future_message_with_absolute_time(mcp, store, forwarder):
     store.add_channel("fake://one")
 
