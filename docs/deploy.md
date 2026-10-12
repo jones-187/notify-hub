@@ -42,20 +42,22 @@
 
 **办法 A（推荐）：用你 NAS 上已有的 git 服务器**
 
-如果 NAS 上已经跑着 git 服务器（例如 `F:\git-server\`），把本仓库也放进去。
+如果 NAS 上已经跑着 git 服务器（例如 `<NAS上的git服务器目录>`），把本仓库也放进去。
 
 在**开发机**上执行：
 
 ```
-ssh jnas "git init --bare F:\git-server\notify-hub.git"
-git remote add lan jnas@192.168.31.72:F:/git-server/notify-hub.git
+ssh <NAS主机别名> "git init --bare <NAS上的git服务器目录>\notify-hub.git"
+git remote add lan <NAS主机别名>@<NAS内网地址>:<NAS上的git服务器目录>/notify-hub.git
 git push lan master
 ```
+
+（Windows 的路径在 ssh 远端里要写成正斜杠，所以上面两句的写法不一样。）
 
 然后在 **NAS** 上克隆：
 
 ```
-git clone F:\git-server\notify-hub.git <仓库目录>
+git clone <NAS上的git服务器目录>\notify-hub.git <仓库目录>
 ```
 
 好处：以后升级只要 `git pull`（见步骤 9），不依赖 NAS 能不能上 GitHub。
@@ -105,7 +107,7 @@ python -c "import secrets; print(secrets.token_hex(32))"
 - **ntfy 就跟本服务跑在同一台机器上时，要特别小心**：容器**连不到宿主机的局域网 IP**
   （Docker Desktop 在 Windows / macOS 上的既有行为）。直接用
   `ntfy://192.168.1.10:2586/topic` 会超时。要改成：
-  1. 把 ntfy 的端口映射改成绑所有接口（`8444:80`，而不是 `192.168.31.72:8444:80`）；
+  1. 把 ntfy 的端口映射改成绑所有接口（`8444:80`，而不是 `<宿主机内网IP>:8444:80`）；
   2. 地址里的主机名换成 `host.docker.internal`，例如
      `ntfy://host.docker.internal:8444/mytopic`。
   自己判断的方法：在容器里连宿主机 LAN IP 的任意已发布端口，**超时**就是这个原因；
