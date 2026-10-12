@@ -80,6 +80,7 @@ def test_deploy_doc_covers_required_steps():
     text = _read("docs/deploy.md")
     for needle in [
         "NOTIFY_TOKEN",  # 生成令牌
+        "PATH_PREFIX",  # 路径前缀（给反代预留位置）
         "bark://",
         "ntfy://",  # 准备并填通道地址
         "备份",  # 备份数据库文件

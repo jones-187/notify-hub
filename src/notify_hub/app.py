@@ -9,20 +9,22 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 from notify_hub.messaging import send_now
+from notify_hub.paths import normalize_prefix
 from notify_hub.store import message_to_dict
 
 
 class BearerAuthMiddleware:
     """校验 bearer 令牌；健康检查免令牌。"""
 
-    def __init__(self, app, token):
+    def __init__(self, app, token, healthz_path="/healthz"):
         self.app = app
         self.token = token
+        self.healthz_path = healthz_path
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        if scope["path"] == "/healthz":
+        if scope["path"] == self.healthz_path:
             return await self.app(scope, receive, send)
 
         headers = dict(scope["headers"])
@@ -33,14 +35,17 @@ class BearerAuthMiddleware:
         return await self.app(scope, receive, send)
 
 
-def create_app(*, store, forwarder, token, wait=anyio.sleep):
+def create_app(*, store, forwarder, token, path_prefix="", wait=anyio.sleep):
     """构建内网端口的应用。
 
     store：排期层的数据存储。
     forwarder：转发层出口。
     token：bearer 令牌。
+    path_prefix：路径前缀（见 paths.normalize_prefix）。空则路径就是 /notify 等。
     wait：重试等待函数，测试注入假的以避免真等。
     """
+    prefix = normalize_prefix(path_prefix)
+    healthz_path = f"{prefix}/healthz"
 
     async def healthz(request):
         return PlainTextResponse("ok")
@@ -58,11 +63,15 @@ def create_app(*, store, forwarder, token, wait=anyio.sleep):
         return JSONResponse({"id": message_id})
 
     routes = [
-        Route("/healthz", healthz, methods=["GET"]),
-        Route("/notify", notify, methods=["POST"]),
-        Route("/messages", messages, methods=["GET"]),
+        Route(healthz_path, healthz, methods=["GET"]),
+        Route(f"{prefix}/notify", notify, methods=["POST"]),
+        Route(f"{prefix}/messages", messages, methods=["GET"]),
     ]
     return Starlette(
         routes=routes,
-        middleware=[Middleware(BearerAuthMiddleware, token=token)],
+        middleware=[
+            Middleware(
+                BearerAuthMiddleware, token=token, healthz_path=healthz_path
+            )
+        ],
     )

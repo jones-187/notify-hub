@@ -11,6 +11,9 @@ services:
       # 两个端口在容器内固定为 8080（公网，只挂 MCP）与 8081（内网）。
       MCP_PORT: "8080"
       INTERNAL_PORT: "8081"
+      # 路径前缀（可选）。留空则路径就是 /mcp、/notify 等；
+      # 设成 /notify-hub 则整体前移，给反向代理预留位置。见 .env.example。
+      PATH_PREFIX: "${PATH_PREFIX:-}"
     ports:
       # 公网端口：只挂 MCP（/mcp）。内网穿透只映射这一条。
       # 宿主机的端口号可用 .env 里的 MCP_HOST_PORT 覆盖（默认 8080）。
@@ -22,12 +25,14 @@ services:
       # 数据目录挂到宿主机；数据库文件在 ./data/notify.db，备份就是复制这个文件。
       - ./data:/data
     healthcheck:
-      # /healthz 免令牌；用容器自带的 python 打，不额外装 curl。
+      # 健康检查免令牌；用容器自带的 python 打，不额外装 curl。
+      # 路径要把 PATH_PREFIX 拼上，且用服务自己那套规范化，
+      # 免得 .env 里的写法跟服务认的不一样就健康不起来。
       test:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz')"
+        - "import os, urllib.request; from notify_hub.paths import normalize_prefix; urllib.request.urlopen('http://127.0.0.1:8081' + normalize_prefix(os.environ.get('PATH_PREFIX', '')) + '/healthz')"
       interval: 30s
       timeout: 5s
       retries: 3

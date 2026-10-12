@@ -1,6 +1,7 @@
 """启动入口：一次把两个端口和后台排期循环都起起来。
 
-公网端口只挂 MCP（路径 /mcp）；内网端口挂 /notify、/healthz、/messages。
+公网端口只挂 MCP；内网端口挂 /notify、/healthz、/messages。
+两条路径都可以整体前移（PATH_PREFIX），给以后加反向代理预留位置。
 端口边界靠两个端口各挂一个 ASGI 应用做实，不只靠路径约定。
 """
 
@@ -14,6 +15,7 @@ import uvicorn
 from notify_hub.app import create_app
 from notify_hub.forwarder import AppriseForwarder
 from notify_hub.mcp_app import create_public_app
+from notify_hub.paths import normalize_prefix
 from notify_hub.scheduler import run_loop
 from notify_hub.store import Store
 
@@ -37,13 +39,20 @@ def config_from_env():
         "db_path": os.environ.get("NOTIFY_DB", DB_PATH),
         "public_port": int(os.environ.get("MCP_PORT", PUBLIC_PORT)),
         "internal_port": int(os.environ.get("INTERNAL_PORT", INTERNAL_PORT)),
+        "path_prefix": normalize_prefix(os.environ.get("PATH_PREFIX", "")),
     }
 
 
-def build_servers(*, store, forwarder, token, public_port, internal_port):
+def build_servers(
+    *, store, forwarder, token, public_port, internal_port, path_prefix=""
+):
     """组出两个监听：公网端口的应用只挂 MCP，内网端口的应用挂普通 HTTP 接口。"""
-    public_app = create_public_app(store=store, forwarder=forwarder, token=token)
-    internal_app = create_app(store=store, forwarder=forwarder, token=token)
+    public_app = create_public_app(
+        store=store, forwarder=forwarder, token=token, path_prefix=path_prefix
+    )
+    internal_app = create_app(
+        store=store, forwarder=forwarder, token=token, path_prefix=path_prefix
+    )
     return Listeners(
         public=uvicorn.Server(
             uvicorn.Config(
@@ -58,7 +67,9 @@ def build_servers(*, store, forwarder, token, public_port, internal_port):
     )
 
 
-async def serve(*, store, forwarder, token, public_port, internal_port):
+async def serve(
+    *, store, forwarder, token, public_port, internal_port, path_prefix=""
+):
     """两个端口共用一条事件循环，后台排期循环也跑在这条循环上，直到收到停止信号。"""
     listeners = build_servers(
         store=store,
@@ -66,6 +77,7 @@ async def serve(*, store, forwarder, token, public_port, internal_port):
         token=token,
         public_port=public_port,
         internal_port=internal_port,
+        path_prefix=path_prefix,
     )
     serving = [
         asyncio.create_task(listeners.public.serve()),
@@ -73,8 +85,9 @@ async def serve(*, store, forwarder, token, public_port, internal_port):
     ]
     scheduler = asyncio.create_task(run_loop(store, forwarder))
     print(
-        f"notify-hub 已启动：公网端口 {public_port}（/mcp），"
-        f"内网端口 {internal_port}（/notify、/healthz、/messages）",
+        f"notify-hub 已启动：公网端口 {public_port}（{path_prefix}/mcp），"
+        f"内网端口 {internal_port}（{path_prefix}/notify、{path_prefix}/healthz、"
+        f"{path_prefix}/messages）",
         flush=True,
     )
     try:
@@ -101,6 +114,7 @@ def main():
             token=config["token"],
             public_port=config["public_port"],
             internal_port=config["internal_port"],
+            path_prefix=config["path_prefix"],
         )
     )
 

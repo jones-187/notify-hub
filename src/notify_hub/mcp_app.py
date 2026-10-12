@@ -14,6 +14,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from notify_hub.messaging import send_now
+from notify_hub.paths import normalize_prefix
 from notify_hub.store import (
     format_shanghai,
     message_summary,
@@ -74,7 +75,9 @@ def _parse_or_tool_error(scheduled_at):
         raise ToolError(str(exc)) from None
 
 
-def create_public_app(*, store, forwarder, token, now=utc_now, wait=anyio.sleep):
+def create_public_app(
+    *, store, forwarder, token, now=utc_now, wait=anyio.sleep, path_prefix=""
+):
     """构建公网端口的应用。
 
     store：排期层的数据存储。
@@ -82,6 +85,7 @@ def create_public_app(*, store, forwarder, token, now=utc_now, wait=anyio.sleep)
     token：bearer 令牌。
     now：取“现在”的函数，测试注入假的以判断时间是否落在过去。
     wait：重试等待函数，测试注入假的以避免真等。
+    path_prefix：路径前缀（见 paths.normalize_prefix）。空则路径就是 /mcp。
     """
     mcp = MCPServer(
         "notify-hub",
@@ -155,4 +159,6 @@ def create_public_app(*, store, forwarder, token, now=utc_now, wait=anyio.sleep)
             )
         return {"id": message.id, "status": message.status}
 
-    return mcp.streamable_http_app(streamable_http_path="/mcp", host="0.0.0.0")
+    return mcp.streamable_http_app(
+        streamable_http_path=f"{normalize_prefix(path_prefix)}/mcp", host="0.0.0.0"
+    )
