@@ -32,3 +32,10 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    # Docker 默认的 json-file 驱动不会轮转日志，长期跑会把磁盘写满。
+    # 单个文件 10 MB，最多保留 3 份，超过就丢弃最旧的。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

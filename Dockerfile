@@ -1,8 +1,9 @@
 # notify-hub 的运行镜像：一个容器、两个端口。依赖用 uv 按仓库里的 uv.lock 装。
 FROM python:3.12-slim
 
-# uv 从官方镜像拷进来。要完全复现构建时，把 :latest 换成固定的版本号。
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# uv 从官方镜像拷进来，固定版本号，保证构建可复现、不随上游变动。
+# 升级 uv 时改这里的版本号，并重新跑一遍测试。
+COPY --from=ghcr.io/astral-sh/uv:0.12.21 /uv /uvx /bin/
 
 # 虚拟环境固定在 /app/.venv；PATH 让 CMD 里的 python 用它。
 ENV UV_LINK_MODE=copy \

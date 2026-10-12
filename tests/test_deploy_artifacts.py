@@ -86,3 +86,26 @@ def test_deploy_doc_covers_required_steps():
         "healthz",  # 怎么检查成不成
     ]:
         assert needle in text, f"部署文档缺步骤：{needle}"
+
+
+def test_dockerfile_pins_uv_image_tag():
+    # 基础镜像不能用 :latest，否则每次构建拿到的 uv 可能不同，构建不可复现。
+    line = next(
+        (
+            line
+            for line in _read("Dockerfile").splitlines()
+            if "ghcr.io/astral-sh/uv" in line
+        ),
+        "",
+    )
+    assert line, "Dockerfile 里找不到 uv 镜像"
+    assert ":latest" not in line, "uv 镜像必须固定版本号，不能用 :latest"
+
+
+def test_compose_rotates_logs():
+    # Docker 默认的 json-file 驱动不轮转，长期跑会把磁盘写满。
+    logging = _service().get("logging") or {}
+    assert logging.get("driver") == "json-file", "日志驱动应为 json-file"
+    options = logging.get("options") or {}
+    assert options.get("max-size"), "日志轮转必须配 max-size"
+    assert options.get("max-file"), "日志轮转必须配 max-file"
