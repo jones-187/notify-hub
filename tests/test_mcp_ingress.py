@@ -42,10 +42,15 @@ async def test_mcp_with_wrong_token_returns_401(mcp_http):
     assert response.status_code == 401
 
 
-async def test_mcp_advertises_both_tools_with_parameters_explained(mcp):
+async def test_mcp_advertises_all_tools_with_parameters_explained(mcp):
     tools = {tool["name"]: tool for tool in await mcp.list_tools()}
 
-    assert list(tools) == ["send_message", "schedule_message"]
+    assert list(tools) == [
+        "send_message",
+        "schedule_message",
+        "list_messages",
+        "cancel_message",
+    ]
     for tool in tools.values():
         assert tool["description"]
         for name, prop in tool["inputSchema"]["properties"].items():

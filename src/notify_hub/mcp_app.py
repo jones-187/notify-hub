@@ -14,7 +14,12 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from notify_hub.messaging import send_now
-from notify_hub.store import format_shanghai, parse_scheduled_at, utc_now
+from notify_hub.store import (
+    format_shanghai,
+    message_summary,
+    parse_scheduled_at,
+    utc_now,
+)
 
 TITLE = Annotated[str, Field(description="消息标题，纯文本。")]
 BODY = Annotated[str, Field(description="消息正文，纯文本。")]
@@ -28,6 +33,16 @@ SCHEDULED_AT = Annotated[
             '例如 "2026-10-13T00:00:00Z" 或 "2026-10-12T16:00:00-08:00"。'
             "不能省略时区，不能写“明天早上八点”这类自然语言。"
             "发送时间落在过去时本工具返回错误，不会改成立刻发送。"
+        )
+    ),
+]
+
+MESSAGE_ID = Annotated[
+    int,
+    Field(
+        description=(
+            "消息编号，来自 send_message / schedule_message 的返回，"
+            "或 list_messages 里某条消息的 id。"
         )
     ),
 ]
@@ -107,5 +122,35 @@ def create_public_app(*, store, forwarder, token, now=utc_now, wait=anyio.sleep)
             title, body, [c.id for c in store.list_enabled_channels()], scheduled
         )
         return {"id": message_id, "scheduled_at": format_shanghai(scheduled)}
+
+    @mcp.tool()
+    async def list_messages() -> dict:
+        """列出还没发的消息和最近已发的消息，最多各 50 条。
+
+        每条含编号 id、发送时间（按 Asia/Shanghai 呈现）、标题、状态。
+        未发的消息在前（发送时间由早到晚），最近已发的在后（由新到旧）。
+        用返回的 id 可以调 cancel_message 取消一条未发的消息。
+        """
+        return {
+            "messages": [message_summary(m) for m in store.list_messages()]
+        }
+
+    @mcp.tool()
+    async def cancel_message(message_id: MESSAGE_ID) -> dict:
+        """取消一条还没发出去的消息（状态变成“已取消”），返回是否成功。
+
+        message_id 来自 send_message / schedule_message 的返回或 list_messages 的 id。
+        只有“未发”的消息能取消；编号不存在，或消息已经发出、已经取消、发送失败时
+        本工具返回错误，不会静默成功。取消不删行，消息仍留在列表里。
+        """
+        message, cancelled = store.cancel_message(message_id)
+        if message is None:
+            raise ToolError(f"编号 {message_id} 的消息不存在")
+        if not cancelled:
+            raise ToolError(
+                f"编号 {message_id} 的消息状态是“{message.status}”，"
+                "只有“未发”的消息才能取消"
+            )
+        return {"id": message.id, "status": message.status}
 
     return mcp.streamable_http_app(streamable_http_path="/mcp", host="0.0.0.0")
