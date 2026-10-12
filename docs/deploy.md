@@ -23,8 +23,49 @@
 
 - NAS 上装了 Docker，且带 Docker Compose v2（命令是 `docker compose`，不是老的
   `docker-compose`）。
-- 本仓库的代码已经放到 NAS 上（下文用 `<仓库目录>` 指这个目录）。
-- 一台 iPhone（装 Bark）和/或 Android、Windows（装 ntfy）。
+- 本仓库的代码已经放到 NAS 上，见[步骤 0](#步骤-0把代码放到-nas-上)（下文用
+  `<仓库目录>` 指这个目录）。
+- 一台 iPhone（装 Bark）；平板或电脑可选装 ntfy，走内网。
+- NAS 的时钟已开自动校时（NTP）。排期依赖绝对时间，时钟不准会让提醒提前或延后。
+
+## 步骤 0：把代码放到 NAS 上
+
+容器是在 NAS 上现构建的，所以代码得先到 NAS。三种办法，按推荐排序。
+
+**办法 A（推荐）：用你 NAS 上已有的 git 服务器**
+
+如果 NAS 上已经跑着 git 服务器（例如 `F:\git-server\`），把本仓库也放进去。
+
+在**开发机**上执行：
+
+```
+ssh jnas "git init --bare F:\git-server\notify-hub.git"
+git remote add lan jnas@192.168.31.72:F:/git-server/notify-hub.git
+git push lan master
+```
+
+然后在 **NAS** 上克隆：
+
+```
+git clone F:\git-server\notify-hub.git <仓库目录>
+```
+
+好处：以后升级只要 `git pull`（见步骤 9），不依赖 NAS 能不能上 GitHub。
+
+**办法 B：在 NAS 上直接从 GitHub 克隆**
+
+```
+git clone https://github.com/<你的账号>/notify-hub.git <仓库目录>
+```
+
+注意：国内网络访问 GitHub 常常不稳定，NAS 上未必拉得动。拉不动就用办法 A。
+
+**办法 C：直接拷贝目录**
+
+把整个仓库目录复制到 NAS 上（网络共享、U 盘都行）。能用，但以后升级要手动覆盖，
+不推荐。
+
+克隆完确认一下：`git -C <仓库目录> log --oneline -1` 能看到提交。
 
 ## 步骤 1：生成令牌
 
@@ -49,23 +90,36 @@ python -c "import secrets; print(secrets.token_hex(32))"
     IP。
   - `{device_key}`：Bark App 里那串设备 key。
   - 例：`bark://api.day.app/abcdEFG123`
-- **ntfy（Android、Windows）**：`ntfy://{user}:{password}@{host}:{port}/{topic}`
+- **ntfy（平板、电脑；也可给手机用）**：`ntfy://{user}:{password}@{host}:{port}/{topic}`
   - `{port}`：官方服务是 `443`（走 `ntfys://` 时端口可省），自建常见 `2586`。
   - 例：`ntfy://myuser:mypass@ntfy.sh:443/mytopic`
   - 自建例：`ntfy://myuser:mypass@192.168.1.10:2586/notify`
 
-一条消息会发给所有启用中的通道。以后加微信，就是往通道表里插一行，不改代码、
-不重建镜像。
+一条消息会发给所有启用中的通道。以后加通道（例如企业微信），就是往通道表里插一行，
+不改代码、不重建镜像。
+
+> **自建通道与“人在外面”**：本服务是**寄件人**——它把消息交给通道服务端，再由通道
+> 服务端转给设备。所以自建的 Bark / ntfy 只在**内网可达**，设备一旦离开内网就收不到。
+> 要在外网也收到，要么用公开可达的服务（例如官方 Bark），要么给自建服务端也开一条
+> 内网穿透。**注意：不要把自建的 ntfy 直接暴露到公网**——它默认没有任何认证，谁连上
+> 都能读写所有 topic。
 
 ## 步骤 3：填 `.env`
 
+复制模板（Windows 用 `copy`，Linux / macOS 用 `cp`）：
+
 ```
-cp .env.example .env
+copy .env.example .env      # Windows，cmd 与 PowerShell 都可用
+cp .env.example .env        # Linux / macOS
 ```
 
 用编辑器打开 `.env`，把 `NOTIFY_TOKEN=` 后面填上步骤 1 生成的令牌。`.env` 已在
 `.gitignore` 里，也不会进镜像。**不要在 `.env` 里留空令牌**：compose 会直接报错，
 不会用空令牌把服务起起来。
+
+> **换行符陷阱（Windows 上很容易踩）**：`.env` 必须存成 **LF** 换行，不能是 CRLF。
+> 存成 CRLF 时令牌末尾会多一个看不见的 `\r`，结果是**每次请求都 401，而且极难查**。
+> 用编辑器确认换行符是 LF。
 
 ## 步骤 4：起容器
 
@@ -76,6 +130,9 @@ docker compose up -d --build
 
 第一次会构建镜像：基础镜像是 `python:3.12-slim`，用镜像里的 `uv` 按仓库里的
 `uv.lock` 装依赖（`uv sync --frozen`），再装本项目。依赖版本由锁文件钉死。
+
+**只能跑一个副本。** 排期存在单个 SQLite 文件里，`docker compose up --scale 2`
+会让两个进程抢同一个库，**不要这样做**。
 
 ## 步骤 5：把通道地址填进通道表
 
@@ -106,6 +163,9 @@ docker compose ps               # 看 State 与健康状态
 curl http://127.0.0.1:8081/healthz    # 回一行 ok，免令牌
 ```
 
+日志已经配了轮转（单个文件 10 MB、最多 3 份，见 `compose.yaml` 的 `logging`），
+不用另外管磁盘。
+
 从内网立刻发一条消息，验证端到端（**这一步会真的发到手机**）：
 
 ```
@@ -123,13 +183,39 @@ curl -H "Authorization: Bearer <令牌>" http://127.0.0.1:8081/messages
 
 每条消息带 `status`、`channel_results`、`last_error`，可以据此确认到底哪个通道失败。
 
+**先确认容器能出网**。排期发消息靠的是**出站**连接，不是入站。在容器里打一下通道的
+主机：
+
+```
+docker compose exec notify-hub python -c "
+import urllib.request, urllib.error
+for url in ['https://api.day.app', 'https://ntfy.sh']:
+    try:
+        urllib.request.urlopen(url, timeout=5)
+        print(url, 'OK')
+    except urllib.error.HTTPError as exc:
+        print(url, '能连上（HTTP', exc.code, '）')
+    except Exception as exc:
+        print(url, '连不上:', exc)
+"
+```
+
+自建通道就换成自己的地址。这里连不上，消息会记成“失败”，原因是连接错误。
+
 ## 步骤 7：配内网穿透（只映射 MCP 端口）
 
 - 在节点小宝里，把内网穿透映射到 **8080**，最终地址形如
   `https://xxx.iepose.cn/mcp`（TLS 由穿透提供）。
 - **不要映射 8081**。内网端口只给局域网里的监控工具用。
-- 在 pi 侧用 `pi mcp add` 配上这个 URL 和 bearer 令牌（具体参数按 pi 文档；pi 不支持
-  旧式 SSE，这里用的是 streamable HTTP，路径 `/mcp`）。
+- 在 pi 侧这样接（pi 不支持旧式 SSE，这里用的是 streamable HTTP，路径 `/mcp`）：
+
+  ```
+  pi mcp add notify-hub --url https://<你的域名>/mcp --bearer-token-env-var NOTIFY_TOKEN
+  pi mcp list      # 确认连得上、工具是 4 个
+  ```
+
+  `NOTIFY_TOKEN` 这个环境变量要设在**跑 pi 的那台电脑**上（不是 NAS 上）。加完在 pi
+  里 `/reload`。
 
 ## 步骤 8：备份数据库文件
 
@@ -163,6 +249,26 @@ docker compose up -d
 数据在挂载卷 `./data` 里，重建容器不会丢。要能回滚，就在构建新镜像前给旧的打个
 标签（例如 `docker tag notify-hub:latest notify-hub:prev`），出问题就切回去。
 
+## 令牌轮换（怀疑泄露时）
+
+令牌一换，所有调用方都要跟着换：
+
+1. 生成新令牌（步骤 1）。
+2. 改 NAS 上 `<仓库目录>\.env` 里的 `NOTIFY_TOKEN=`。
+3. `docker compose up -d`（要重建容器才会读到新环境变量）。
+4. 改**跑 pi 那台电脑**上的 `NOTIFY_TOKEN` 环境变量，然后在 pi 里 `/reload`。
+5. 有内网脚本调 `/notify` 的，同步改。
+
+漏掉第 4 步的表现是：pi 那边一直 401。
+
+## 为什么现在不需要反向代理
+
+只暴露一个端口、一个路径（`/mcp`），域名和 HTTPS 都由内网穿透提供，**没有东西需要
+分流**，所以不装 nginx / Caddy。
+
+将来如果要在一个域名下同时挂多个服务或多条路径（例如把 Web 界面或 `/notify` 也放
+出去），那时才需要反向代理。服务端所有路径已经预留了前缀，加反代时不用改代码。
+
 ## 本机验证不了的部分（重要）
 
 这台开发机**没有 Docker**，所以下面几件事我在本机**没有验证过**，不假装验证过。
@@ -171,8 +277,9 @@ docker compose up -d
 1. **构建镜像**：没跑过 `docker compose build`，所以不保证镜像一定构建成功。
    - 到 NAS 上确认：`docker compose build` 正常结束且无报错；
      `docker compose images` 能看到 `notify-hub`。
-   - 已知风险：`Dockerfile` 里 `ghcr.io/astral-sh/uv:latest` 依赖外网拉取，NAS 若拉不动
-     这个镜像，改成固定版本号或改用 `pip install uv`。
+   - 已知风险：`Dockerfile` 里的 uv 镜像已固定版本号（`ghcr.io/astral-sh/uv:0.12.21`），
+     构建可复现；但它终究要从外网拉这个镜像，NAS 若拉不动，可改用 `pip install uv`
+     或换一个能拉动的来源。
 2. **起容器**：没起过，所以没验证过进程真的监听两个端口。
    - 到 NAS 上确认：`docker compose ps` 里 State 是 `Up`、健康状态是 `healthy`；
      `docker compose logs` 里能看到 `notify-hub 已启动：公网端口 8080（/mcp），内网端口 8081…`。
@@ -191,7 +298,7 @@ docker compose up -d
   与锁文件、compose 的两个端口映射、数据卷与 `NOTIFY_DB`、免令牌健康检查、令牌只从
   环境变量来、`.env.example` 无真令牌、`.env` 进了 `.gitignore` 与 `.dockerignore`、
   部署文档包含必需步骤。
-- 全部单元与集成测试（共 39 个原有 + 本次新增）继续通过。
+- 全部单元与集成测试继续通过（2026-10-12 复核：61 个，全绿）。
 
 ## 故障排查
 
@@ -200,3 +307,11 @@ docker compose up -d
 - 健康检查 `unhealthy`：内网端口没起来，看日志。
 - 手机收不到：`GET /messages` 看该消息的 `last_error`。Apprise 地址写错会记成
   “通道地址无效”，网络问题会记成连接错误。
+- **一直 401**：先怀疑 `.env` 存成了 CRLF（见步骤 3），令牌末尾多了个 `\r`；再确认
+  调用方用的令牌和 `.env` 里的一致。
+- **消息状态是“失败”，`last_error` 是连接错误**：容器出不了网，按步骤 6 的连通性
+  自检查。
+- **pi 连不上 MCP**：依次确认穿透映射的是 8080、路径是 `/mcp`、跑 pi 那台电脑上的
+  `NOTIFY_TOKEN` 已设好、且已经 `/reload`。
+- **服务没反应、`docker compose ps` 显示 unhealthy**：看 `docker compose logs`，
+  多半是 8081 没起来或 `/data` 目录不可写。

@@ -13,7 +13,7 @@
 ## 已定
 
 - 只做通知。不做去重、不做静默，这两件事交给监控工具（[ADR 0004](./docs/adr/0004-delivery-only-no-dedup.md)）。
-- 通道要能扩展。现在有 Bark 和 ntfy，以后可能加微信。
+- 通道要能扩展。现在有 Bark 和 ntfy，以后可能加企业微信。
 - iPhone 继续用 Bark。
 - 部署在 Windows NAS 上，用 Docker。
 - 时间由 AI 换算成绝对时间，再交给服务。
@@ -41,6 +41,6 @@
 
 - Apprise（转发层，仍在维护）：https://github.com/caronc/apprise
 - MIND（已否决的候选，Docker 镜像最后更新 2024-11-23）：https://github.com/Casvt/MIND
-- ntfy（通道之一，自带排期能力，但到不了 Bark 和微信）：https://github.com/binwiederhier/ntfy
+- ntfy（通道之一，自带排期能力，但到不了 Bark 和企业微信）：https://github.com/binwiederhier/ntfy
 - pi 支持 stdio 与 streamable HTTP 两种 MCP 传输，不支持旧式 SSE。
 - 节点小宝：内网穿透按域名访问，例如 `xxx.iepose.cn`。
