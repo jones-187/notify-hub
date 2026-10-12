@@ -46,6 +46,33 @@ class FakeSleep:
             raise StopLoop()
 
 
+class RecordingStore(Store):
+    """记录 cleanup 被调用次数的 Store，用来验证循环会定期触发清理。"""
+
+    def __init__(self, path):
+        super().__init__(path)
+        self.cleanup_calls = 0
+
+    def cleanup(self, **kwargs):
+        self.cleanup_calls += 1
+        return super().cleanup(**kwargs)
+
+
+class AdvancingSleep:
+    """假的循环等待：每次把时钟推进一步，到次数后停止循环。"""
+
+    def __init__(self, clock, stop_after):
+        self.clock = clock
+        self.stop_after = stop_after
+        self.calls = 0
+
+    async def __call__(self, delay):
+        self.clock.advance(delay)
+        self.calls += 1
+        if self.calls >= self.stop_after:
+            raise StopLoop()
+
+
 def test_schedule_message_stores_pending_message_with_all_columns(store):
     store.add_channel("fake://one")
     scheduled = datetime(2026, 10, 13, 8, 0, 0, tzinfo=TZ)
@@ -163,3 +190,23 @@ async def test_run_loop_checks_due_messages_every_second(store, forwarder, wait)
         )
 
     assert sleep.delays == [1.0, 1.0]
+
+
+async def test_run_loop_runs_cleanup_at_configured_interval(tmp_path, forwarder, wait):
+    store = RecordingStore(tmp_path / "notify.db")
+    clock = FakeClock(datetime(2026, 10, 13, 8, 0, 0, tzinfo=TZ))
+    sleep = AdvancingSleep(clock, stop_after=8)
+
+    with pytest.raises(StopLoop):
+        await run_loop(
+            store,
+            forwarder,
+            interval=1.0,
+            now=clock.now,
+            sleep=sleep,
+            wait=wait,
+            cleanup_interval=3.0,
+        )
+
+    # 每 3 秒清理一次；循环 8 步（时钟推进 8 秒）应触发 2 次
+    assert store.cleanup_calls == 2
