@@ -1,4 +1,4 @@
-"""保留清理：数据库超上限时删最旧的已发/已取消消息并回收空间；未发消息永不删。
+"""保留清理：数据库超上限时删最旧的已发/已取消/失败消息并回收空间；未发消息永不删。
 
 接缝是 Store 的公开清理接口。测试用很小的阈值，绝不造 10 MB 数据；
 未发消息的存活用一个很久以前的未发消息来证明，绝不真等时间。
@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timezone
 
 from notify_hub.forwarder import ChannelDelivery
-from notify_hub.store import STATUS_CANCELLED, STATUS_SENT, Store
+from notify_hub.store import STATUS_CANCELLED, STATUS_FAILED, STATUS_SENT, Store
 
 # 很小的阈值：SQLite 空库约 16 KB，所以上限设在几十 KB，测试数据也就几十 KB。
 MAX_BYTES = 24 * 1024
@@ -93,6 +93,29 @@ def test_cleanup_deletes_oldest_cancelled_messages_too(tmp_path):
     assert os.path.getsize(db_path) <= TARGET_BYTES
     remaining = [mid for mid in cancelled_ids if store.get_message(mid) is not None]
     removed = [mid for mid in cancelled_ids if store.get_message(mid) is None]
+    assert remaining and removed
+    assert min(remaining) > max(removed)
+    # 未发消息仍然不是候选
+    assert store.get_message(pending_id) is not None
+
+
+def test_cleanup_deletes_oldest_failed_messages_too(tmp_path):
+    """失败的消息也是历史：通道一直坏时，靠删它们才能把文件降下来。"""
+    db_path = tmp_path / "notify.db"
+    store = Store(db_path)
+    store.add_channel("fake://one")
+    failed_ids = fill_messages(store, 200, status=STATUS_FAILED)
+    pending_id = schedule_old_pending(store)
+    size_before = os.path.getsize(db_path)
+    assert size_before > MAX_BYTES
+
+    deleted = store.cleanup(max_bytes=MAX_BYTES, target_bytes=TARGET_BYTES)
+
+    assert deleted > 0
+    assert os.path.getsize(db_path) < size_before
+    assert os.path.getsize(db_path) <= TARGET_BYTES
+    remaining = [mid for mid in failed_ids if store.get_message(mid) is not None]
+    removed = [mid for mid in failed_ids if store.get_message(mid) is None]
     assert remaining and removed
     assert min(remaining) > max(removed)
     # 未发消息仍然不是候选

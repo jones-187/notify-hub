@@ -302,9 +302,10 @@ class Store:
         self._conn.commit()
 
     def cleanup(self, *, max_bytes=DEFAULT_MAX_BYTES, target_bytes=DEFAULT_TARGET_BYTES):
-        """超过 max_bytes 时删最旧的已发和已取消消息，回收空间到 target_bytes 以下。
+        """超过 max_bytes 时删最旧的已发、已取消和失败消息，回收空间到 target_bytes 以下。
 
-        只删已发和已取消的消息，未发的消息永远不是候选。
+        只删已发、已取消和失败的消息，未发的消息永远不是候选。
+        失败的消息也是历史，不是待发的消息；通道一直坏时靠删它们才能把文件降下来。
         删除后文件不会自己变小，所以最后 VACUUM 一次真正回收空间。
         返回被删掉的消息条数。
         """
@@ -335,10 +336,10 @@ class Store:
         return (page_count - free_pages) * page_size
 
     def _delete_oldest_reclaimable(self, live_bytes, target_bytes):
-        """删最旧的一批已发/已取消消息；只删到接近目标所需的数量，避免多删历史。"""
+        """删最旧的一批已发/已取消/失败消息；只删到接近目标所需的数量，避免多删历史。"""
         reclaimable = self._conn.execute(
-            "SELECT COUNT(*) FROM messages WHERE status IN (?, ?)",
-            (STATUS_SENT, STATUS_CANCELLED),
+            "SELECT COUNT(*) FROM messages WHERE status IN (?, ?, ?)",
+            (STATUS_SENT, STATUS_CANCELLED, STATUS_FAILED),
         ).fetchone()[0]
         if reclaimable == 0:
             return 0
@@ -347,9 +348,9 @@ class Store:
         needed = max(1, math.ceil((live_bytes - target_bytes) / average_row))
         batch = min(reclaimable, needed)
         rows = self._conn.execute(
-            "SELECT id FROM messages WHERE status IN (?, ?)"
+            "SELECT id FROM messages WHERE status IN (?, ?, ?)"
             " ORDER BY created_at, id LIMIT ?",
-            (STATUS_SENT, STATUS_CANCELLED, batch),
+            (STATUS_SENT, STATUS_CANCELLED, STATUS_FAILED, batch),
         ).fetchall()
         ids = [row["id"] for row in rows]
         placeholders = ",".join("?" for _ in ids)
