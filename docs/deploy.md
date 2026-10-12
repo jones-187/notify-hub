@@ -20,6 +20,10 @@
 > 表里的 8080 / 8081 是**宿主机端口默认值**。这两个端口若已被别的服务占用，在 `.env`
 > 里用 `MCP_HOST_PORT` / `INTERNAL_HOST_PORT` 覆盖（见步骤 3）。下文出现 8080 / 8081
 > 的地方，换成你实际设的值。容器内部永远是 8080 / 8081，服务代码不用改。
+
+表里的路径是**默认值**。想让所有路径整体前移、给以后的反向代理预留位置，在 `.env`
+里设 `PATH_PREFIX=/notify-hub`，路径就变成 `/notify-hub/mcp`、`/notify-hub/notify`……
+（见步骤 3 与“要不要现在就加反向代理”一节）。
 - 数据库是单个文件，落在挂载卷里：宿主机 `./data/notify.db`，容器内 `/data/notify.db`。
 - 令牌只从环境变量 `NOTIFY_TOKEN` 传入，不写进镜像、不入库、不进 git。
 
@@ -129,6 +133,10 @@ cp .env.example .env        # Linux / macOS
 `.gitignore` 里，也不会进镜像。**不要在 `.env` 里留空令牌**：compose 会直接报错，
 不会用空令牌把服务起起来。
 
+**路径前缀（可选）**：想让所有路径整体前移、给以后的反向代理预留位置，加上
+`PATH_PREFIX=/notify-hub`。不设则路径就是 `/mcp`、`/notify` 等。详见
+“要不要现在就加反向代理”一节。
+
 > **换行符陷阱（Windows 上很容易踩）**：`.env` 必须存成 **LF** 换行，不能是 CRLF。
 > 存成 CRLF 时令牌末尾会多一个看不见的 `\r`，结果是**每次请求都 401，而且极难查**。
 > 用编辑器确认换行符是 LF。
@@ -227,13 +235,17 @@ for url in ['https://api.day.app', 'https://ntfy.sh']:
 
 ## 步骤 7：配内网穿透（只映射 MCP 端口）
 
-- 在节点小宝里，把内网穿透映射到**宿主机的 MCP 端口**（`MCP_HOST_PORT`，默认 8080），
-  最终地址形如 `https://xxx.iepose.cn/mcp`（TLS 由穿透提供）。
+- 在节点小宝里，把内网穿透映射到**宿主机的 MCP 端口**（`MCP_HOST_PORT`，默认 8080）。
+  TLS 由穿透提供。最终地址 = `https://<你的域名>` **+ `PATH_PREFIX` + `/mcp`**：
+  - 没设前缀：`https://xxx.iepose.cn/mcp`
+  - 设了 `PATH_PREFIX=/notify-hub`：`https://xxx.iepose.cn/notify-hub/mcp`
+  - **整个域名都转给这一个端口**，所以穿透里不用（也无法）按路径分流，前缀是在
+    `.env` 里设的。
 - **不要映射内网端口**（`INTERNAL_HOST_PORT`，默认 8081）。它只给局域网里的监控工具用。
-- 在 pi 侧这样接（pi 不支持旧式 SSE，这里用的是 streamable HTTP，路径 `/mcp`）：
+- 在 pi 侧这样接（pi 不支持旧式 SSE，这里用的是 streamable HTTP）：
 
   ```
-  pi mcp add notify-hub --url https://<你的域名>/mcp --bearer-token-env-var NOTIFY_TOKEN
+  pi mcp add notify-hub --url https://<你的域名><PATH_PREFIX>/mcp --bearer-token-env-var NOTIFY_TOKEN
   pi mcp list      # 确认连得上、工具是 4 个
   ```
 
@@ -300,26 +312,32 @@ docker compose up -d
 
 漏掉第 4 步的表现是：pi 那边一直 401。
 
-## 为什么现在不需要反向代理
+## 要不要现在就加反向代理
 
-只暴露一个端口、一个路径（`/mcp`），域名和 HTTPS 都由内网穿透提供，**没有东西需要
+**不需要现在装反代。** 只暴露一个端口，域名和 HTTPS 都由内网穿透提供，**没有东西需要
 分流**，所以不装 nginx / Caddy。
 
-将来如果要在一个域名下同时挂多个服务或多条路径（例如把 Web 界面或 `/notify` 也放
-出去），那时才需要反向代理。加反代时**本服务不用改代码**，因为：
+但**位置是预留好的**：所有路径都支持一个统一前缀，由 `PATH_PREFIX` 控制。
 
-- 它**不依赖 Host 头，也不对外发任何绝对 URL**：401 响应里只有
+| `PATH_PREFIX` | 实际路径 |
+| --- | --- |
+| *（空，默认）* | `/mcp`、`/notify`、`/healthz`、`/messages` |
+| `/notify-hub` | `/notify-hub/mcp`、`/notify-hub/notify`、…… |
+
+为什么这件事重要：以后在一个域名下同时挂多个服务时，反向代理有两种做法——
+“**剥前缀**”或“**原样转发**”。剥前缀是经典坑（重定向、`Location` 头很容易出错）。
+有了 `PATH_PREFIX`，反向代理只需要**原样转发** `/notify-hub/*`，不必剥任何东西，
+服务端代码一行不用改。
+
+本服务在反代后面也是安全的（已实测）：
+
+- **不依赖 Host 头，也不对外发任何绝对 URL**：401 响应里只有
   `www-authenticate: Bearer error=...`（**没有** `resource_metadata` 绝对地址）、
-  尾斜杠重定向用的是相对路径 `location: /mcp`、OAuth 发现端点被故意关闭。所以放在
-  任何反代后面都不会被带歪。
-- **但 `/mcp` 是写死的**（`mcp_app.py` 里的 `streamable_http_path="/mcp"`，没有环境变量
-  能改）。反代**不能给它套个前缀再原样转发**，必须先 strip 掉前缀，否则会 404。
+  尾斜杠重定向用的是相对路径、OAuth 发现端点被故意关闭。
+- 所以放在任何反代后面都不会被带歪，换域名也不用改配置。
 
-所以分流方式建议：优先用**子域名**（每个服务一个）；非要按路径分流，就把前缀留给
-**别的**服务（例如 `/ntfy/`），让 `/mcp` 保持原样。
-
-> 反代只要把 `/mcp` 原样转发到本服务的 MCP 端口即可；穿透的目标改成反代端口就行，
-> 本服务不需要重建镜像。
+> 加反代时：把穿透的目标改成反代的端口，给反代配一条
+> `/notify-hub/*` → 本服务 MCP 端口的**原样转发**规则就行。
 
 ## 本机验证不了的部分（重要）
 
@@ -334,7 +352,8 @@ docker compose up -d
      或换一个能拉动的来源。
 2. **起容器**：没起过，所以没验证过进程真的监听两个端口。
    - 到 NAS 上确认：`docker compose ps` 里 State 是 `Up`、健康状态是 `healthy`；
-     `docker compose logs` 里能看到 `notify-hub 已启动：公网端口 8080（/mcp），内网端口 8081…`。
+     `docker compose logs` 里能看到 `notify-hub 已启动：公网端口 8080（/mcp），内网端口 8081…`
+     （设了 `PATH_PREFIX` 的话，日志里会直接打上真实路径，以日志为准）。
 3. **真发一条通知**：从没真发到手机（本机的测试用假的转发层，绝不真发）。
    - 到 NAS 上确认：步骤 6 的 `curl` 返回 `{"id": ...}`，手机真的收到。
 4. **重启后补发未发的消息**：只能在 NAS 上测（规格里也把这条列为部署后要实测的点）。
@@ -368,7 +387,10 @@ docker compose up -d
 - **Bark 偶尔失败、重试后才成功**：Bark 走公网，网络抖动时会失败。重试机制会兜住
   （看该通道 `channel_results` 里的 `attempts`，大于 1 就是靠重试救回来的）。
   偶尔一次不用管，频繁出现就要查那台机器的网络或代理了。
-- **pi 连不上 MCP**：依次确认穿透映射的是 8080、路径是 `/mcp`、跑 pi 那台电脑上的
+- **pi 连不上 MCP**：依次确认穿透映射的是 8080、URL 里的路径是
+  `PATH_PREFIX + /mcp`（例如 `https://域名/notify-hub/mcp`）、跑 pi 那台电脑上的
   `NOTIFY_TOKEN` 已设好、且已经 `/reload`。
+- **改了 `PATH_PREFIX` 后 pi 报 404**：pi 里的 URL 没跟着改；或者改了 `.env` 但没
+  `docker compose up -d` 重建容器（不重建读不到新环境变量）。
 - **服务没反应、`docker compose ps` 显示 unhealthy**：看 `docker compose logs`，
   多半是 8081 没起来或 `/data` 目录不可写。
