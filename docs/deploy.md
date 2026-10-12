@@ -240,9 +240,22 @@ for url in ['https://api.day.app', 'https://ntfy.sh']:
   `NOTIFY_TOKEN` 这个环境变量要设在**跑 pi 的那台电脑**上（不是 NAS 上）。加完在 pi
   里 `/reload`。
 
-## 步骤 8：备份数据库文件
+## 步骤 8（可选）：手动备份，平时不用做
 
-数据库就是单个文件 `./data/notify.db`，备份就是复制它。为保险起见先停容器再复制：
+**这个服务不备份也没什么损失。** 先看它到底存了什么：整个数据库就是单个文件
+`./data/notify.db`，里面只有两张表——`channels`（通道地址，通常就几行）和
+`messages`（发过的消息记录）。
+
+丢了会怎样：
+
+- 丢 `channels`：把几条通道地址重新填一遍，两分钟的事。
+- 丢 `messages`：只是历史记录，没它服务照常跑。
+
+所以**平时不做备份，也不要配定时任务**——为一个能两分钟重建的配置文件养一个
+定时任务，还要顺带管它的日志和失败告警，不划算。真正值钱的是“怎么从零重建”，
+那就是这份文档前面的步骤。
+
+只有一种情况值得手动备一份：你打算大改通道表、或者升级前心里没底。那就：
 
 ```
 docker compose stop
@@ -258,7 +271,10 @@ Copy-Item data\notify.db "data\notify.db.bak-$(Get-Date -Format yyyyMMdd)"
 docker compose start
 ```
 
-恢复：把备份文件放回 `data/notify.db`，再 `docker compose up -d`。
+备份完把 `data\notify.db.bak-*` 留着还是删掉都行，它只是一个副本，不影响正在跑的
+服务。
+
+恢复：把备份文件改名为 `data/notify.db`（盖掉现的）再 `docker compose up -d`。
 
 ## 步骤 9：升级镜像
 
