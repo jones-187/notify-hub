@@ -4,6 +4,10 @@ import json
 import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+# 服务只用一个时区：对外的时间都按它理解、按它回显。
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 STATUS_PENDING = "未发"
 STATUS_SENT = "已发"
@@ -24,6 +28,48 @@ def format_utc(dt):
     if dt.tzinfo is None or dt.utcoffset() is None:
         raise ValueError("时间必须带时区")
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+
+def format_shanghai(dt):
+    """把带时区的时间转成固定格式的 Asia/Shanghai RFC3339 字符串。"""
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        raise ValueError("时间必须带时区")
+    return dt.astimezone(SHANGHAI).strftime("%Y-%m-%dT%H:%M:%S+08:00")
+
+
+def parse_scheduled_at(text):
+    """把对外的带时区 RFC3339 字符串解析成带时区的时间。
+
+    不带时区或以其它格式给出时报错，不做静默猜测。
+    """
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        raise ValueError(
+            f"发送时间不是合法的 RFC3339 时间：{text!r}，"
+            "正确格式例如 2026-10-13T08:00:00+08:00"
+        ) from None
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        raise ValueError(
+            f"发送时间必须带时区：{text!r}，正确格式例如 2026-10-13T08:00:00+08:00"
+        )
+    return dt
+
+
+def message_to_dict(message):
+    """消息对外的形状：时间按 Asia/Shanghai 呈现，库里存的仍是 UTC。"""
+    return {
+        "id": message.id,
+        "title": message.title,
+        "body": message.body,
+        "status": message.status,
+        "channels": message.channels,
+        "scheduled_at": format_shanghai(datetime.fromisoformat(message.scheduled_at)),
+        "created_at": format_shanghai(datetime.fromisoformat(message.created_at)),
+        "attempts": message.attempts,
+        "last_error": message.last_error,
+        "channel_results": message.channel_results,
+    }
 
 
 @dataclass(frozen=True)
@@ -165,6 +211,20 @@ class Store:
         )
         self._conn.commit()
         return cur.lastrowid
+
+    def list_messages(self, *, pending_limit=50, sent_limit=50):
+        """未发的消息（发送时间由早到晚）加最近发送过的消息（由晚到早）。"""
+        pending = self._conn.execute(
+            "SELECT * FROM messages WHERE status = ?"
+            " ORDER BY scheduled_at, id LIMIT ?",
+            (STATUS_PENDING, pending_limit),
+        ).fetchall()
+        sent = self._conn.execute(
+            "SELECT * FROM messages WHERE status IN (?, ?)"
+            " ORDER BY id DESC LIMIT ?",
+            (STATUS_SENT, STATUS_FAILED, sent_limit),
+        ).fetchall()
+        return [self._row_to_message(row) for row in list(pending) + list(sent)]
 
     def fetch_due_messages(self, now, limit=50):
         """取出到点仍未发的消息，最多 limit 条。"""

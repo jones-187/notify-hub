@@ -1,11 +1,17 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import httpx
 import pytest
+from mcp_client import McpHttpClient
 
 from notify_hub.app import create_app
 from notify_hub.forwarder import DeliveryResult
+from notify_hub.mcp_app import create_public_app
 from notify_hub.store import Store
 
 TOKEN = "test-token"
+TZ = ZoneInfo("Asia/Shanghai")
 
 
 class FakeForwarder:
@@ -73,3 +79,38 @@ async def client(app):
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://internal") as c:
         yield c
+
+
+@pytest.fixture
+def now():
+    """固定在 2026-10-13 08:00:00+08:00 的“现在”，测试从不真等。"""
+    return datetime(2026, 10, 13, 8, 0, 0, tzinfo=TZ)
+
+
+@pytest.fixture
+def public_app(store, forwarder, wait, now):
+    return create_public_app(
+        store=store,
+        forwarder=forwarder,
+        token=TOKEN,
+        now=lambda: now,
+        wait=wait,
+    )
+
+
+@pytest.fixture
+async def mcp_http(public_app):
+    # MCP 应用的 lifespan 启动会话管理器；ASGITransport 不会自己跑 lifespan。
+    async with public_app.router.lifespan_context(public_app):
+        transport = httpx.ASGITransport(app=public_app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://public"
+        ) as http:
+            yield http
+
+
+@pytest.fixture
+async def mcp(mcp_http):
+    client = McpHttpClient(mcp_http, TOKEN)
+    await client.initialize()
+    yield client
