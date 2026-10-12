@@ -1,0 +1,17 @@
+# 机密：绝不进构建上下文，也就不会被打进镜像。
+.env
+
+# 本地运行状态：数据库文件与挂载卷。
+data/
+*.db
+
+# 开发用文件。
+.git/
+.gitignore
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.scratch/
+tests/
+docs/
