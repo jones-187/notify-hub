@@ -90,14 +90,14 @@
 
 - 一个进程，两套监听：
   - **公网端口**：只挂 MCP。用官方 Python SDK 做 streamable HTTP，路径 `/mcp`。校验 bearer 令牌。
-  - **内网端口**：`POST /notify`（立刻发一条）、`GET /healthz`、`GET /messages`（只读，方便排查）。同样要令牌，因为内网不等于可信。
+  - **内网端口**：`POST /notify`（立刻发一条）、`GET /healthz`、`GET /messages`（只读，方便排查）。除健康检查外都要令牌，因为内网不等于可信。健康检查只回一行 ok，不需要令牌，也不包含敏感信息。
 - MCP 工具 4 个，英文名：`send_message`、`schedule_message`、`list_messages`、`cancel_message`。不做“修改”，改一条等于取消加新建。
 - 令牌只从环境变量读。生成方式与存放位置写在部署步骤里，不入库、不进 git。
 - 不做反向代理。所有路径预留前缀（例如以后 `/notify` 变成 `/api/notify`），以后加反向代理时服务不用改。
 
 **保留**
 
-- 数据库文件超过 10 MB 时，删最旧的已发消息，降到 8 MB 以下。
+- 数据库文件超过 10 MB 时，删最旧的“已发”和“已取消”消息，降到 8 MB 以下。
 - 未发的消息永不删除。
 
 **部署**
