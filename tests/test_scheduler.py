@@ -119,7 +119,7 @@ async def test_tick_sends_due_message_and_marks_sent(store, forwarder, wait):
 
     assert [m.id for m in sent] == [message_id]
     assert forwarder.calls == [
-        {"apprise_url": "fake://one", "title": "标题", "body": "正文"}
+        {"apprise_url": "fake://one", "title": "标题", "body": "正文", "priority": "normal"}
     ]
     stored = store.get_message(message_id)
     assert stored.status == STATUS_SENT
@@ -146,7 +146,7 @@ async def test_tick_does_not_send_future_message_until_clock_advances(
 
     assert [m.id for m in sent] == [message_id]
     assert forwarder.calls == [
-        {"apprise_url": "fake://one", "title": "标题", "body": "正文"}
+        {"apprise_url": "fake://one", "title": "标题", "body": "正文", "priority": "normal"}
     ]
 
 

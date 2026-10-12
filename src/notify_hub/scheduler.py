@@ -25,7 +25,12 @@ async def tick(store, forwarder, *, now=utc_now, wait=anyio.sleep, limit=50):
     for message in due:
         channels = store.get_channels(message.channels)
         deliveries = await deliver(
-            forwarder, channels, message.title, message.body, wait=wait
+            forwarder,
+            channels,
+            message.title,
+            message.body,
+            priority=message.priority,
+            wait=wait,
         )
         status, attempts, last_error = summarize_deliveries(deliveries)
         store.update_message_status(

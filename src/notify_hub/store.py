@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from notify_hub.priority import DEFAULT_LEVEL
+
 # 服务只用一个时区：对外的时间都按它理解、按它回显。
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -88,6 +90,7 @@ def message_to_dict(message):
         "title": message.title,
         "body": message.body,
         "status": message.status,
+        "priority": message.priority,
         "channels": message.channels,
         "scheduled_at": format_shanghai(datetime.fromisoformat(message.scheduled_at)),
         "created_at": format_shanghai(datetime.fromisoformat(message.created_at)),
@@ -117,6 +120,7 @@ class Message:
     channels: list = field(default_factory=list)
     scheduled_at: str | None = None
     created_at: str | None = None
+    priority: str = DEFAULT_LEVEL
 
 
 class Store:
@@ -144,11 +148,24 @@ class Store:
                 last_error TEXT,
                 channels TEXT NOT NULL DEFAULT '[]',
                 scheduled_at TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                priority TEXT NOT NULL DEFAULT 'normal'
             );
             """
         )
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self):
+        """给早于本版本的库补上新列；新库建表时已经带上了。"""
+        columns = {
+            row["name"] for row in self._conn.execute("PRAGMA table_info(messages)")
+        }
+        if "priority" not in columns:
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN priority TEXT NOT NULL"
+                f" DEFAULT '{DEFAULT_LEVEL}'"
+            )
 
     def add_channel(self, apprise_url, enabled=True):
         cur = self._conn.execute(
@@ -189,6 +206,7 @@ class Store:
         channels=None,
         scheduled_at=None,
         created_at=None,
+        priority=DEFAULT_LEVEL,
     ):
         """记录一条已尝试发送的消息（立即发送路径）。"""
         if channels is None:
@@ -200,8 +218,8 @@ class Store:
         cur = self._conn.execute(
             "INSERT INTO messages"
             " (title, body, status, channel_results, attempts, last_error,"
-            " channels, scheduled_at, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " channels, scheduled_at, created_at, priority)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 title,
                 body,
@@ -212,20 +230,30 @@ class Store:
                 json.dumps(list(dict.fromkeys(channels))),
                 scheduled_at,
                 created_at,
+                priority,
             ),
         )
         self._conn.commit()
         return cur.lastrowid
 
-    def schedule_message(self, title, body, channel_ids, scheduled_at, *, now=None):
+    def schedule_message(
+        self,
+        title,
+        body,
+        channel_ids,
+        scheduled_at,
+        *,
+        now=None,
+        priority=DEFAULT_LEVEL,
+    ):
         """排一条未来时间的消息，状态为“未发”。"""
         created_at = format_utc(now if now is not None else utc_now())
         scheduled_text = format_utc(scheduled_at)
         cur = self._conn.execute(
             "INSERT INTO messages"
             " (title, body, status, channel_results, attempts, last_error,"
-            " channels, scheduled_at, created_at)"
-            " VALUES (?, ?, ?, '[]', 0, NULL, ?, ?, ?)",
+            " channels, scheduled_at, created_at, priority)"
+            " VALUES (?, ?, ?, '[]', 0, NULL, ?, ?, ?, ?)",
             (
                 title,
                 body,
@@ -233,6 +261,7 @@ class Store:
                 json.dumps(list(dict.fromkeys(channel_ids))),
                 scheduled_text,
                 created_at,
+                priority,
             ),
         )
         self._conn.commit()
@@ -381,4 +410,5 @@ class Store:
             channels=json.loads(row["channels"] or "[]"),
             scheduled_at=row["scheduled_at"],
             created_at=row["created_at"],
+            priority=row["priority"],
         )

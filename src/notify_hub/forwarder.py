@@ -9,6 +9,8 @@ from typing import Protocol
 import anyio
 import apprise
 
+from notify_hub.priority import DEFAULT_LEVEL, apply_priority
+
 
 @dataclass(frozen=True)
 class DeliveryResult:
@@ -31,7 +33,9 @@ class ChannelDelivery:
 class Forwarder(Protocol):
     """转发层出口。每个通道每次尝试调用一次。"""
 
-    def send(self, apprise_url: str, title: str, body: str) -> DeliveryResult: ...
+    def send(
+        self, apprise_url: str, title: str, body: str, priority: str
+    ) -> DeliveryResult: ...
 
 
 class AppriseForwarder:
@@ -43,9 +47,9 @@ class AppriseForwarder:
     def __init__(self, timeout=5):
         self._timeout = timeout
 
-    def send(self, apprise_url, title, body):
+    def send(self, apprise_url, title, body, priority=DEFAULT_LEVEL):
         apprise_obj = apprise.Apprise()
-        if not apprise_obj.add(apprise_url):
+        if not apprise_obj.add(apply_priority(apprise_url, priority)):
             return DeliveryResult(success=False, error=f"通道地址无效：{apprise_url}")
         with apprise_obj.notify(
             title=title, body=body, timeout=self._timeout
@@ -70,6 +74,7 @@ async def deliver(
     title,
     body,
     *,
+    priority=DEFAULT_LEVEL,
     retry_delays=DEFAULT_RETRY_DELAYS,
     wait=anyio.sleep,
 ):
@@ -82,7 +87,7 @@ async def deliver(
     deliveries = []
     for channel in channels:
         result, attempts = await _deliver_with_retry(
-            forwarder, channel, title, body, retry_delays, wait
+            forwarder, channel, title, body, priority, retry_delays, wait
         )
         deliveries.append(
             ChannelDelivery(
@@ -96,12 +101,12 @@ async def deliver(
 
 
 async def _deliver_with_retry(
-    forwarder: Forwarder, channel, title, body, retry_delays, wait
+    forwarder: Forwarder, channel, title, body, priority, retry_delays, wait
 ):
     attempt = 0
     while True:
         result = await anyio.to_thread.run_sync(
-            forwarder.send, channel.apprise_url, title, body
+            forwarder.send, channel.apprise_url, title, body, priority
         )
         attempt += 1
         if result.success or attempt > len(retry_delays):

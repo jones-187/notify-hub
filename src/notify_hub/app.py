@@ -10,6 +10,7 @@ from starlette.routing import Route
 
 from notify_hub.messaging import send_now
 from notify_hub.paths import normalize_prefix
+from notify_hub.priority import normalize_priority
 from notify_hub.store import message_to_dict
 
 
@@ -41,8 +42,11 @@ def create_app(*, store, forwarder, token, path_prefix="", wait=anyio.sleep):
     store：排期层的数据存储。
     forwarder：转发层出口。
     token：bearer 令牌。
-    path_prefix：路径前缀（见 paths.normalize_prefix）。空则路径就是 /notify 等。
+    prefix：路径前缀（见 paths.normalize_prefix）。空则路径就是 /notify 等。
     wait：重试等待函数，测试注入假的以避免真等。
+
+    请求体除 title / body 外可以带 priority 指定优先级
+    （low / normal / high / urgent，默认 normal），见 priority 模块。
     """
     prefix = normalize_prefix(path_prefix)
     healthz_path = f"{prefix}/healthz"
@@ -57,8 +61,17 @@ def create_app(*, store, forwarder, token, path_prefix="", wait=anyio.sleep):
 
     async def notify(request):
         data = await request.json()
+        try:
+            priority = normalize_priority(data.get("priority"))
+        except ValueError as error:
+            return JSONResponse({"error": str(error)}, status_code=400)
         message_id = await send_now(
-            store, forwarder, data["title"], data["body"], wait=wait
+            store,
+            forwarder,
+            data["title"],
+            data["body"],
+            priority=priority,
+            wait=wait,
         )
         return JSONResponse({"id": message_id})
 

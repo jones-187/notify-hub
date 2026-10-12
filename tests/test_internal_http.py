@@ -38,7 +38,7 @@ async def test_notify_sends_to_channel_and_returns_message_id(client, store, for
     assert resp.status_code == 200
     assert isinstance(resp.json()["id"], int)
     assert forwarder.calls == [
-        {"apprise_url": "fake://channel-one", "title": "标题", "body": "正文"}
+        {"apprise_url": "fake://channel-one", "title": "标题", "body": "正文", "priority": "normal"}
     ]
 
 

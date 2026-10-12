@@ -2,9 +2,9 @@
 
 自建的提醒与通知服务。目标：让 AI 在指定的时间，把一条消息发到我的所有设备。
 
-状态：**代码已写完，本地测试 60 个全绿（2026-10-12）。还没部署到 NAS。**
+状态：**代码已写完，本地测试 87 个全绿（2026-10-13）**。部署步骤见 [docs/deploy.md](./docs/deploy.md)。
 
-规格见 [.scratch/notify-hub/spec.md](./.scratch/notify-hub/spec.md)，工单见 [.scratch/notify-hub/issues/](./.scratch/notify-hub/issues/)，部署步骤见 [docs/deploy.md](./docs/deploy.md)。
+规格见 [.scratch/notify-hub/spec.md](./.scratch/notify-hub/spec.md)，工单见 [.scratch/notify-hub/issues/](./.scratch/notify-hub/issues/)。
 
 分支：`feat/notify-hub`。
 
@@ -24,6 +24,7 @@
 - 内网穿透用节点小宝。已确认：有 HTTPS，带宽 2 Mbps。
 - 入口给 AI 4 个工具：`send_message`、`schedule_message`、`list_messages`、`cancel_message`。不做“修改”，改一条等于取消旧的加新建一条。
 - 内网端口另开一个普通 HTTP 接口（`POST /notify`），给监控工具和脚本用。
+- 每条消息可以带一个优先级（`low` / `normal` / `high` / `urgent`）。服务只负责把它**带到通道上**，级别由调用方定；仍然不做抑制与静默（[ADR 0005](./docs/adr/0005-carry-priority-in-channel-address.md)）。
 - 投递失败重试 3 次，仍然失败就记一条日志，不改走别的通道。
 - 时区固定 `Asia/Shanghai`。时间落在过去就直接报错，不静默改成“现在发”。
 - 排期跨度不设上限。

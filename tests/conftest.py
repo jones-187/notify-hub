@@ -8,6 +8,7 @@ from mcp_client import McpHttpClient
 from notify_hub.app import create_app
 from notify_hub.forwarder import DeliveryResult
 from notify_hub.mcp_app import create_public_app
+from notify_hub.priority import DEFAULT_LEVEL
 from notify_hub.store import Store
 
 TOKEN = "test-token"
@@ -22,8 +23,15 @@ class FakeForwarder:
         self.fail_urls = set()
         self.fail_times = {}
 
-    def send(self, apprise_url, title, body):
-        self.calls.append({"apprise_url": apprise_url, "title": title, "body": body})
+    def send(self, apprise_url, title, body, priority=DEFAULT_LEVEL):
+        self.calls.append(
+            {
+                "apprise_url": apprise_url,
+                "title": title,
+                "body": body,
+                "priority": priority,
+            }
+        )
         if apprise_url in self.fail_urls:
             return DeliveryResult(success=False, error=f"发送失败：{apprise_url}")
         if self.fail_times.get(apprise_url, 0) > 0:

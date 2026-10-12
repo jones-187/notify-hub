@@ -3,6 +3,7 @@
 import anyio
 
 from notify_hub.forwarder import deliver
+from notify_hub.priority import DEFAULT_LEVEL
 from notify_hub.store import STATUS_FAILED, STATUS_SENT
 
 # 一个启用中的通道都没有时，消息一条也发不出去，记这个原因。
@@ -23,11 +24,19 @@ def summarize_deliveries(deliveries):
     return status, attempts, last_error
 
 
-async def send_now(store, forwarder, title, body, *, wait=anyio.sleep):
+async def send_now(store, forwarder, title, body, *, priority=DEFAULT_LEVEL, wait=anyio.sleep):
     """把一条消息发给所有启用中的通道，返回消息编号。"""
     channels = store.list_enabled_channels()
-    deliveries = await deliver(forwarder, channels, title, body, wait=wait)
+    deliveries = await deliver(
+        forwarder, channels, title, body, priority=priority, wait=wait
+    )
     status, attempts, last_error = summarize_deliveries(deliveries)
     return store.add_message(
-        title, body, status, deliveries, attempts=attempts, last_error=last_error
+        title,
+        body,
+        status,
+        deliveries,
+        attempts=attempts,
+        last_error=last_error,
+        priority=priority,
     )

@@ -105,6 +105,6 @@ async def test_internal_port_serves_healthz_notify_and_messages(
     assert healthz.status_code == 200
     assert notify.status_code == 200
     assert forwarder.calls == [
-        {"apprise_url": "fake://one", "title": "标题", "body": "正文"}
+        {"apprise_url": "fake://one", "title": "标题", "body": "正文", "priority": "normal"}
     ]
     assert [m["id"] for m in messages.json()["messages"]] == [notify.json()["id"]]

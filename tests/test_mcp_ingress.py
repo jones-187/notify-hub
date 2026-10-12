@@ -75,7 +75,7 @@ async def test_send_message_sends_immediately_and_returns_message_id(
     assert result["isError"] is False
     message_id = mcp.json(result)["id"]
     assert forwarder.calls == [
-        {"apprise_url": "fake://one", "title": "标题", "body": "正文"}
+        {"apprise_url": "fake://one", "title": "标题", "body": "正文", "priority": "normal"}
     ]
     stored = store.get_message(message_id)
     assert stored.title == "标题"
