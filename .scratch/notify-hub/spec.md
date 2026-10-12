@@ -70,7 +70,7 @@
 
 **运行时与容器**
 
-- Python 3.12，一个 Docker 容器（linux/amd64）。不用 Apprise API 容器；直接在自己进程里 import Apprise 库。
+- Python 3.11 或更高（本机是 3.11，镜像用 3.12），一个 Docker 容器（linux/amd64）。不用 Apprise API 容器；直接在自己进程里 import Apprise 库。
 - 转发层是 Apprise 的库调用，同步阻塞。所以发送放到线程池里执行，不阻塞排期循环和请求处理。
 
 **转发层**
