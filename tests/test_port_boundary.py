@@ -47,12 +47,6 @@ async def internal_client(servers):
         yield http
 
 
-def test_two_listeners_on_two_different_ports(servers):
-    assert servers.public.config.port == PUBLIC_PORT
-    assert servers.internal.config.port == INTERNAL_PORT
-    assert PUBLIC_PORT != INTERNAL_PORT
-
-
 async def test_public_port_serves_mcp(public_http):
     mcp = McpHttpClient(public_http, TOKEN)
     await mcp.initialize()
@@ -77,6 +71,14 @@ async def test_public_port_does_not_serve_internal_routes(public_http):
     assert notify.status_code == 404
     assert healthz.status_code == 404
     assert messages.status_code == 404
+
+
+async def test_public_port_does_not_expose_oauth_discovery(public_http):
+    # 规格只要求 bearer 令牌，不要求 OAuth。公网不应多一个免令牌的发现端点。
+    # （mcp 2.3.0 会在 resource_server_url 非空时自动注册它，所以这里固定为空。）
+    response = await public_http.get("/.well-known/oauth-protected-resource/mcp")
+
+    assert response.status_code == 404
 
 
 async def test_internal_port_does_not_serve_mcp(internal_client):

@@ -1,13 +1,14 @@
 """排期层：后台循环，到点取出消息并复用转发层送出。"""
 
+import functools
+
 import anyio
 
 from notify_hub.forwarder import deliver
+from notify_hub.messaging import summarize_deliveries
 from notify_hub.store import (
     DEFAULT_MAX_BYTES,
     DEFAULT_TARGET_BYTES,
-    STATUS_FAILED,
-    STATUS_SENT,
     utc_now,
 )
 
@@ -26,11 +27,7 @@ async def tick(store, forwarder, *, now=utc_now, wait=anyio.sleep, limit=50):
         deliveries = await deliver(
             forwarder, channels, message.title, message.body, wait=wait
         )
-        status = STATUS_SENT if all(d.success for d in deliveries) else STATUS_FAILED
-        attempts = max((d.attempts for d in deliveries), default=0)
-        last_error = next(
-            (d.error for d in reversed(deliveries) if not d.success), None
-        )
+        status, attempts, last_error = summarize_deliveries(deliveries)
         store.update_message_status(
             message.id, status, deliveries, attempts=attempts, last_error=last_error
         )
@@ -54,12 +51,17 @@ async def run_loop(
 
     启动：在异步上下文里调用本函数；停止：取消该任务。
     清理不是只在启动时跑一次，而是每隔 cleanup_interval 秒跑一次。
+    清理里的 VACUUM 会重写整库，放到线程池里执行，不阻塞排期循环和请求处理。
     """
     last_cleanup = now()
     while True:
         await tick(store, forwarder, now=now, wait=wait, limit=limit)
         current = now()
         if (current - last_cleanup).total_seconds() >= cleanup_interval:
-            store.cleanup(max_bytes=max_bytes, target_bytes=target_bytes)
+            await anyio.to_thread.run_sync(
+                functools.partial(
+                    store.cleanup, max_bytes=max_bytes, target_bytes=target_bytes
+                )
+            )
             last_cleanup = current
         await sleep(interval)

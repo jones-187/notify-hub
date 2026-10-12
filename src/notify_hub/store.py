@@ -66,8 +66,9 @@ def message_summary(message):
     """列表里一条消息的对外形状：编号、发送时间、标题、状态。
 
     发送时间按 Asia/Shanghai 呈现，库里存的仍是 UTC。
+    只有失败的消息才带上失败原因；成功的记录不带，不把返回形状撑大。
     """
-    return {
+    summary = {
         "id": message.id,
         "scheduled_at": format_shanghai(
             datetime.fromisoformat(message.scheduled_at)
@@ -75,6 +76,9 @@ def message_summary(message):
         "title": message.title,
         "status": message.status,
     }
+    if message.status == STATUS_FAILED:
+        summary["last_error"] = message.last_error
+    return summary
 
 
 def message_to_dict(message):
