@@ -30,6 +30,18 @@
 | `high` | `high` | `timeSensitive` |
 | `urgent` | `max` | `critical` |
 
+### Bark 这一档的真实上限（别期望过高）
+
+Bark 官方文档说 `level=critical`（重要警告）「会忽略静音和勿扰模式，始终播放通知声音并在屏幕上显示」，
+但**它做不到**：Bark 作者在 [Finb/Bark#256](https://github.com/Finb/Bark/issues/256) 里确认
+「没有重要警告的权限，所以不能突破静音设置」。这是苹果的 Critical Alerts 资格，需要单独申请，
+普通 App 拿不到。
+
+所以 `urgent` 在 iPhone 上只是“叫得响一点”，不能真穿透静音。想更强只能给 Bark 导一段长铃声、
+用 `sound` 参数配合。这一档仍然保留，因为：语义上它是对的；Bark 真拿到资格那天它就会生效；
+而且实际表现到底比 `timeSensitive` 强还是弱，要在真手机上看——如果发下来发现 `urgent` 反而
+比 `high` 安静，就把这里改成 `timeSensitive`。
+
 ## 为什么不交给 Apprise 自己翻译
 
 试过，**Apprise 没有“每条消息一个优先级”这个能力**。2026-10-13 用真实 HTTP 请求验证：
