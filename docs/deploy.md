@@ -98,6 +98,14 @@ python -c "import secrets; print(secrets.token_hex(32))"
   - `{port}`：官方服务是 `443`（走 `ntfys://` 时端口可省），自建常见 `2586`。
   - 例：`ntfy://myuser:mypass@ntfy.sh:443/mytopic`
   - 自建例：`ntfy://myuser:mypass@192.168.1.10:2586/notify`
+- **ntfy 就跟本服务跑在同一台机器上时，要特别小心**：容器**连不到宿主机的局域网 IP**
+  （Docker Desktop 在 Windows / macOS 上的既有行为）。直接用
+  `ntfy://192.168.1.10:2586/topic` 会超时。要改成：
+  1. 把 ntfy 的端口映射改成绑所有接口（`8444:80`，而不是 `192.168.31.72:8444:80`）；
+  2. 地址里的主机名换成 `host.docker.internal`，例如
+     `ntfy://host.docker.internal:8444/mytopic`。
+  自己判断的方法：在容器里连宿主机 LAN IP 的任意已发布端口，**超时**就是这个原因；
+  而绑 `0.0.0.0` 的服务用 `host.docker.internal` 能连上。
 
 一条消息会发给所有启用中的通道。以后加通道（例如企业微信），就是往通道表里插一行，
 不改代码、不重建镜像。
@@ -326,6 +334,11 @@ docker compose up -d
   调用方用的令牌和 `.env` 里的一致。
 - **消息状态是“失败”，`last_error` 是连接错误**：容器出不了网，按步骤 6 的连通性
   自检查。
+- **只有自建 ntfy 收不到，其它通道正常**：ntfy 和本服务在同一台机器时，容器回不到
+  宿主机 LAN IP。见步骤 2 里的说明：ntfy 绑 `0.0.0.0`，地址用 `host.docker.internal`。
+- **Bark 偶尔失败、重试后才成功**：Bark 走公网，网络抖动时会失败。重试机制会兜住
+  （看该通道 `channel_results` 里的 `attempts`，大于 1 就是靠重试救回来的）。
+  偶尔一次不用管，频繁出现就要查那台机器的网络或代理了。
 - **pi 连不上 MCP**：依次确认穿透映射的是 8080、路径是 `/mcp`、跑 pi 那台电脑上的
   `NOTIFY_TOKEN` 已设好、且已经 `/reload`。
 - **服务没反应、`docker compose ps` 显示 unhealthy**：看 `docker compose logs`，
