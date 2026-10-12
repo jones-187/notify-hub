@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done（提交 3cf2854；审查修复见 2dcbac2）
 
 - [ ] 数据库文件超过 10 MB 时，删最旧的“已发”和“已取消”消息，降到 8 MB 以下。
 - [ ] 未发的消息无论多老都不被删除。

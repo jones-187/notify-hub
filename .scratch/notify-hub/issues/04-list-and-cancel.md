@@ -4,7 +4,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done（提交 f89bdaf；审查修复见 2dcbac2）
 
 - [ ] 工具 `list_messages`：能列出未发的消息，也能看最近已发的消息。
 - [ ] 列表里每条消息都有编号、发送时间、标题和状态。

@@ -4,7 +4,7 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done（提交 cf234bb；审查修复见 2dcbac2）
 
 - [ ] 一条消息的多个通道分别发送，分别记录每个通道的结果。
 - [ ] 只有失败的通道会重试，最多 3 次，间隔递增。

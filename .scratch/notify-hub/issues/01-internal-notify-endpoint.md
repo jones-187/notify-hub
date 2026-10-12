@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done（提交 d1e808d；审查修复见 2dcbac2）
 
 - [ ] 服务提供一个“立刻发一条消息”的内网接口，参数是标题和正文。
 - [ ] 没有令牌或令牌错误时返回 401；令牌正确时返回这条消息的编号。

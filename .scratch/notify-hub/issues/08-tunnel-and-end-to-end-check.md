@@ -4,7 +4,7 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** ready-for-human（要在 NAS 上做，agent 做不了）
 
 - [ ] 节点小宝里只映射 MCP 端口，不映射内网端口。
 - [ ] pi 用 url 加 bearer 令牌环境变量连上远程 MCP。

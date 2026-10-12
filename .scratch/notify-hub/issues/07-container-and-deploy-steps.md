@@ -4,7 +4,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done（提交 556d80a；构建镜像与起容器要到 NAS 上验证）
 
 - [ ] 一个 Dockerfile 和一个 compose 文件。
 - [ ] 数据目录挂载到宿主机，容器重建后数据还在。

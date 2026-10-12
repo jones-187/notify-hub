@@ -2,7 +2,11 @@
 
 自建的提醒与通知服务。目标：让 AI 在指定的时间，把一条消息发到我的所有设备。
 
-状态：**方案阶段，还没有代码。** 下一件产出是方案文档（架构、接口、数据表）。
+状态：**代码已写完，本地测试 60 个全绿（2026-10-12）。还没部署到 NAS。**
+
+规格见 [.scratch/notify-hub/spec.md](./.scratch/notify-hub/spec.md)，工单见 [.scratch/notify-hub/issues/](./.scratch/notify-hub/issues/)，部署步骤见 [docs/deploy.md](./docs/deploy.md)。
+
+分支：`feat/notify-hub`。
 
 术语见 [GLOSSARY.md](./GLOSSARY.md)。已定的决策见 [docs/adr/](./docs/adr/)。
 
@@ -26,6 +30,13 @@
 - 反向代理不做，只预留路径。
 - 转发层用 Apprise 库（在自己进程里 import），不用 Apprise API 容器。一个容器。
 - 已发消息的保留：数据库文件超过 10 MB 时，删最旧的已发消息，降到 8 MB 以下。未发消息永不删。
+- 没有启用中的通道时，消息算“失败”，不算“已发”（失败原因写进记录）。
+- 公网端口上不提供 OAuth 发现端点，只支持静态 bearer 令牌。
+
+## 还没定
+
+- 清理的删除候选要不要包含“失败”的消息。不包含的话，某条通道一直坏时数据库降不到 8 MB 以下。
+- 工单 08（穿透接入与端到端验证）要在 NAS 上做，还没做。
 
 ## 参考
 

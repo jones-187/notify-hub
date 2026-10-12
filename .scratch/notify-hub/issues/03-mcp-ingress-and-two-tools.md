@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done（提交 769ec11；审查修复见 2dcbac2）
 
 - [ ] 服务提供一个 streamable HTTP 的 MCP 端点（路径 `/mcp`）。这个端口只挂 MCP，不挂内网接口。
 - [ ] 公网端口不响应内网接口（例如 `/notify` 返回 404）；内网端口不挂 MCP。
