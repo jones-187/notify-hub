@@ -20,15 +20,16 @@ class DeliveryResult:
 
 @dataclass(frozen=True)
 class ChannelDelivery:
-    """一个通道一次发送的结果，连同通道编号。"""
+    """一个通道发送的最终结果，连同通道编号与尝试次数。"""
 
     channel_id: int
     success: bool
     error: str | None = None
+    attempts: int = 1
 
 
 class Forwarder(Protocol):
-    """转发层出口。每个通道调用一次。"""
+    """转发层出口。每个通道每次尝试调用一次。"""
 
     def send(self, apprise_url: str, title: str, body: str) -> DeliveryResult: ...
 
@@ -59,21 +60,48 @@ class AppriseForwarder:
         return "; ".join(messages) or "发送失败"
 
 
-async def deliver(forwarder, channels, title, body):
-    """逐通道发送一条消息，返回每个通道的结果。
+# 失败后重试的间隔（秒），逐次递增；共重试 3 次。
+DEFAULT_RETRY_DELAYS = (1.0, 2.0, 4.0)
+
+
+async def deliver(
+    forwarder,
+    channels,
+    title,
+    body,
+    *,
+    retry_delays=DEFAULT_RETRY_DELAYS,
+    wait=anyio.sleep,
+):
+    """逐通道发送一条消息，返回每个通道的最终结果。
 
     发送放到线程池里执行，不阻塞请求处理。
+    只有失败的通道会重试：重试间隔取自 retry_delays（递增），
+    成功的通道只发一次，绝不重发。等待函数可注入，测试不真等。
     """
     deliveries = []
     for channel in channels:
-        result = await anyio.to_thread.run_sync(
-            forwarder.send, channel.apprise_url, title, body
+        result, attempts = await _deliver_with_retry(
+            forwarder, channel, title, body, retry_delays, wait
         )
         deliveries.append(
             ChannelDelivery(
                 channel_id=channel.id,
                 success=result.success,
                 error=result.error,
+                attempts=attempts,
             )
         )
     return deliveries
+
+
+async def _deliver_with_retry(forwarder, channel, title, body, retry_delays, wait):
+    attempt = 0
+    while True:
+        result = await anyio.to_thread.run_sync(
+            forwarder.send, channel.apprise_url, title, body
+        )
+        attempt += 1
+        if result.success or attempt > len(retry_delays):
+            return result, attempt
+        await wait(retry_delays[attempt - 1])
